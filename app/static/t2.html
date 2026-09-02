@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-no-login="true">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>T2 · ePortal 订单修改</title>
+<link rel="stylesheet" href="/static/style.css">
+<style>
+  :root { --accent: #2563eb; }
+  body { background: #eef2f7; }
+  .nav { background: #fff; border-radius: 10px; padding: 10px 16px; box-shadow: 0 2px 10px rgba(15,23,42,.05); margin-bottom: 14px; }
+  .card { padding: 18px 22px; border-radius: 12px; box-shadow: 0 2px 12px rgba(15,23,42,.06); }
+  .card h2 { font-size: 15px; color: #0f172a; margin-bottom: 16px; padding-left: 10px; border-left: 3px solid var(--accent); }
+  .group-card h2 { border-left-color: #7c3aed; }
+  .order-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px; }
+  .order-head h2 { margin: 0; }
+  .hint-note { color: var(--muted); font-size: 12.5px; background: #f8fafc; border-left: 3px solid var(--blue); padding: 8px 12px; border-radius: 6px; margin-top: 12px; }
+  .field-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px 24px; }
+  .field-cell { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .field-label { font-weight: 600; font-size: 13px; color: #1e293b; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .field-label .req { color: var(--red); }
+  .field-name { color: #94a3b8; font-size: 11.5px; }
+  .field-control input, .field-control select { width: 100%; }
+  .attribution { color: var(--muted); font-size: 11.5px; background: #fff7ed; border: 1px solid #fed7aa; padding: 4px 8px; border-radius: 6px; }
+  .attribution.mem { background: #fff1f2; border-color: #fecdd3; color: #9f1239; }
+  .extra-area { display: flex; flex-direction: column; gap: 6px; margin-top: 2px; }
+  .extra-area textarea { width: 100%; resize: vertical; min-height: 52px; }
+  .mem-options { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; }
+  .mem-options label { display: inline-flex; gap: 4px; align-items: center; font-size: 12.5px; cursor: pointer; color: #475569; }
+  .btn { border-radius: 8px; padding: 8px 16px; font-weight: 600; transition: box-shadow .15s, transform .05s; }
+  .btn.green { background: #059669; }
+  .btn:hover { box-shadow: 0 4px 12px rgba(37,99,235,.22); }
+  .btn:active { transform: translateY(1px); }
+  #itemsTable { width: 100%; border-collapse: collapse; }
+  #itemsTable th { position: sticky; top: 0; background: #f1f5f9; z-index: 1; white-space: normal; min-width: 112px; font-weight: 600; }
+  #itemsTable th, #itemsTable td { padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  #itemsTable td { min-width: 112px; }
+  #itemsTable tr:nth-child(even) td { background: #fafbfc; }
+  #itemsTable input, #itemsTable select { width: 100%; box-sizing: border-box; min-width: 0; }
+  #itemsTable td.op-col, #itemsTable th.op-col { width: 60px; min-width: 60px; white-space: nowrap; }
+  .attach-row { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 8px; margin-bottom: 8px; background: #fbfcfe; }
+  .attach-row .att-name { flex: 1; font-weight: 600; font-size: 13px; }
+  .attach-row .att-state { color: var(--muted); font-size: 12px; }
+  .action-bar { display: flex; gap: 10px; align-items: center; justify-content: flex-end; flex-wrap: wrap; }
+</style>
+</head>
+<body>
+<div class="wrap" style="max-width:960px">
+  <div class="nav">
+    <strong style="color:var(--orange)">T2 订单修改</strong>
+    <span class="kv" id="who"></span>
+    <span class="spacer"></span>
+    <a href="/eportal">返回 ePortal</a>
+  </div>
+
+  <div id="blocker" class="card hidden" style="border:2px solid var(--red)">
+    <h2 style="color:var(--red)">无法进入修改页</h2>
+    <div id="blockerMsg"></div>
+  </div>
+
+  <div id="main" class="hidden">
+    <div class="card">
+      <div class="order-head">
+        <h2 id="orderTitle">订单</h2>
+        <span class="kv" id="orderMeta"></span>
+      </div>
+      <div class="hint-note">带 <span class="badge memory">由记忆自动修改</span> 标注的字段为 T1 按记忆自动替换；🔒 为 ePortal 计算字段，只读。</div>
+    </div>
+
+    <div id="fieldGroups"></div>
+
+    <div class="card" id="itemsCard">
+      <h2>产品明细</h2>
+      <div id="itemsHint"></div>
+      <div style="overflow:auto"><table id="itemsTable"></table></div>
+      <div class="mt" id="itemsActions"></div>
+    </div>
+
+    <div class="card" id="attachCard">
+      <h2>附件</h2>
+      <div id="attachList"></div>
+    </div>
+
+    <div class="card">
+      <div class="action-bar">
+        <button id="btnReload" class="btn gray hidden" onclick="loadCurrent()">重新加载最新订单</button>
+        <button id="btnSave" class="btn green">保存并同步回写 ePortal</button>
+        <button id="btnBack" class="btn purple">返回 ePortal</button>
+      </div>
+      <div id="editMsg"></div>
+      <div id="resultBody"></div>
+    </div>
+  </div>
+</div>
+
+<!-- 保存完成确认弹窗 -->
+<div id="confirmModal" class="modal-mask hidden">
+  <div class="modal" style="width:min(430px,92vw)">
+    <h3>保存完成</h3>
+    <p id="confirmText">修改已完成并同步回写 ePortal。</p>
+    <div class="right mt">
+      <button id="btnStay" class="btn gray">否，留在本页</button>
+      <button id="btnGoBack" class="btn green">是，返回 ePortal</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+// 浏览器 URL 仅携带一次性 opaque ticket（不含用户信息/订单内容/长期令牌）
+const params = new URLSearchParams(location.search);
+const ticket = params.get("ticket");
+
+let order = null;          // ePortal 当前订单
+let original = {};         // 进入时的值快照 {field: value}
+let edits = {};            // 标量字段修改 {field: newValue}
+let descriptions = {};     // 错误说明 {field: text}
+let items = [];            // 产品行（结构化）
+let itemsDirty = false;
+let attachments = [];      // 附件（结构化）
+let attachmentsDirty = false;
+let lastSavedOrderId = null;
+
+$("btnGoBack").addEventListener("click", () => {
+  location.href = "/eportal#" + (lastSavedOrderId || "");
+});
+$("btnStay").addEventListener("click", () => {
+  $("confirmModal").classList.add("hidden");
+});
+
+async function api(path, options = {}) {
+  const resp = await fetch(path, {
+    method: options.method || "GET",
+    headers: options.body ? { "Content-Type": "application/json" } : {},
+    body: options.body ? JSON.stringify(options.body) : undefined,
+    credentials: "same-origin",
+  });
+  let data = {};
+  try { data = await resp.json(); } catch (e) {}
+  if (!resp.ok) {
+    const err = new Error(data.detail || data.message || ("HTTP " + resp.status));
+    err.status = resp.status;
+    throw err;
+  }
+  return data;
+}
+
+function showBlocker(msg) {
+  $("blocker").classList.remove("hidden");
+  $("main").classList.add("hidden");
+  $("blockerMsg").innerHTML = `<div class="msg err">${msg.replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]))}</div>`;
+}
+
+async function init() {
+  if (!ticket) { showBlocker("缺少 ticket 参数（请从 ePortal 订单页【修改】按钮进入，URL 仅携带一次性 ticket）"); return; }
+  try {
+    await api("/api/eportal/session", { method: "POST", body: { ticket } });  // 一次性换票 → HttpOnly 会话
+  } catch (e) { showBlocker(e.message); return; }
+  loadCurrent();
+}
+
+async function loadCurrent() {
+  $("editMsg").innerHTML = ""; $("resultBody").innerHTML = "";
+  $("btnReload").classList.add("hidden");
+  let detail;
+  try {
+    detail = await api("/api/eportal/orders/current");
+  } catch (e) { showBlocker(e.message); return; }
+  $("who").textContent = `操作人：${detail.operator.name}`;
+  if (!detail.order) { showBlocker(detail.message || "订单加载失败"); return; }
+  order = detail.order;
+  renderOrder();
+}
+
+function esc(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+function renderOrder() {
+  $("main").classList.remove("hidden");
+  $("orderTitle").textContent = `订单 ${order.order_id}　${order.customer_name}`;
+  $("orderMeta").innerHTML = `状态：${esc(order.status)}　ePortal 版本：v${order.version}` +
+    (order.auto_modified && Object.keys(order.auto_modified).length
+      ? `　<span class="badge memory">${Object.keys(order.auto_modified).length} 个字段由记忆自动修改</span>` : "");
+  original = {}; edits = {}; descriptions = {};
+  items = (order.items || []).map(r => ({ ...r }));
+  itemsDirty = false;
+  attachments = (order.attachments || []).map(r => ({ ...r }));
+  attachmentsDirty = false;
+
+  // 按分组渲染标量字段（type: text/date/boolean/select；editable=false 只读）
+  const groups = {};
+  for (const [name, meta] of Object.entries(order.fields || {})) {
+    const g = meta.group || "基本信息";
+    (groups[g] = groups[g] || []).push([name, meta]);
+    original[name] = meta.value;
+  }
+  $("fieldGroups").innerHTML = Object.entries(groups).map(([g, list]) => `
+    <div class="card group-card"><h2>${esc(g)}</h2>
+      <div class="field-grid">${list.map(([name, meta]) => fieldCell(name, meta)).join("")}</div>
+    </div>`).join("");
+
+  // 输入事件：记录修改 + 动态生成「错误说明（供系统学习）」与记忆方式选择
+  for (const [name, meta] of Object.entries(order.fields || {})) {
+    if (!meta.editable) continue;
+    const el = document.querySelector(`[data-field="${CSS.escape(name)}"]`);
+    if (!el) continue;
+    const handler = () => {
+      const value = meta.type === "boolean" ? (el.checked ? "true" : "false") : el.value;
+      onScalarInput(name, meta, value);
+    };
+    if (meta.type === "boolean") el.addEventListener("change", handler);
+    else if (meta.type === "select") el.addEventListener("change", () => selectHandler(name, meta, el));
+    else el.addEventListener("input", handler);
+  }
+  renderItems();
+  renderAttachments();
+}
+
+function controlHtml(name, meta) {
+  const value = meta.value == null ? "" : String(meta.value);
+  if (!meta.editable) {
+    return `<input type="text" value="${esc(value)}" readonly disabled>`;
+  }
+  if (meta.type === "boolean") {
+    return `<input type="checkbox" data-field="${esc(name)}" ${String(value).toLowerCase() === "true" ? "checked" : ""}>`;
+  }
+  if (meta.type === "date") {
+    return `<input type="date" data-field="${esc(name)}" value="${esc(value)}">`;
+  }
+  if (meta.type === "select") {
+    const opts = meta.options || [];
+    if (value && !opts.includes(value)) {
+      // 智眸原值/业务员历史值不在预设选项内（如 13%、无税）→ 直接文本输入
+      return `<input type="text" data-field="${esc(name)}" value="${esc(value)}">`;
+    }
+    return `<select data-field="${esc(name)}" data-select="1">
+      ${meta.required ? "" : `<option value="" ${value === "" ? "selected" : ""}>（空）</option>`}
+      ${opts.map(o => `<option value="${esc(o)}" ${String(o) === value ? "selected" : ""}>${esc(o)}</option>`).join("")}
+      <option value="__custom__">其他（自定义）…</option>
+    </select>`;
+  }
+  return `<input type="text" data-field="${esc(name)}" value="${esc(value)}">`;
+}
+
+function fieldCell(name, meta) {
+  const auto = order.auto_modified && order.auto_modified[name];
+  const badge = auto
+    ? `<span class="badge memory">由记忆自动修改</span>`
+    : (meta.editable === false ? `<span class="badge off">🔒 只读</span>` : "");
+  const attr = auto && auto.original_value !== undefined
+    ? `<div class="attribution mem">命中记忆 #${auto.rule_id}：智眸原值「${esc(auto.original_value)}」→ 自动改为「${esc(meta.value)}」</div>` : "";
+  return `<div class="field-cell" id="row_${esc(name)}">
+    <div class="field-label">${esc(meta.label || name)}${meta.required ? '<span class="req">*</span>' : ""} ${badge}</div>
+    <div class="field-name">${esc(name)}</div>
+    <div class="field-control">${controlHtml(name, meta)}</div>
+    ${attr}
+    <div class="extra-area" id="extra_${esc(name)}"></div>
+  </div>`;
+}
+
+function selectHandler(name, meta, el) {
+  if (el.value === "__custom__") {  // 选择「其他（自定义）」→ 切换为文本框手输
+    const input = document.createElement("input");
+    input.type = "text";
+    input.dataset.field = name;
+    input.placeholder = "输入自定义值（不在预设选项内）";
+    el.replaceWith(input);
+    input.focus();
+    input.addEventListener("input", () => onScalarInput(name, meta, input.value));
+    return;
+  }
+  onScalarInput(name, meta, el.value);
+}
+
+function onScalarInput(name, meta, value) {
+  if (String(value) === String(original[name] == null ? "" : original[name])) {
+    delete edits[name]; delete descriptions[name];
+    $("extra_" + CSS.escape(name)).innerHTML = "";
+    return;
+  }
+  edits[name] = value;
+  const auto = order.auto_modified && order.auto_modified[name];
+  const memoryControl = auto
+    ? `<label>记忆方式：</label>
+       <label><input type="radio" name="fb_${esc(name)}" value="override" checked>覆盖原规则</label>
+       <label><input type="radio" name="fb_${esc(name)}" value="once">仅本次单次修改</label>`
+    : `<label>记忆方式：</label>
+       <label><input type="radio" name="mc_${esc(name)}" value="permanent" checked>长期规则</label>
+       <label><input type="radio" name="mc_${esc(name)}" value="once">仅本次单次修改</label>
+       <label><input type="radio" name="mc_${esc(name)}" value="none">不记忆</label>`;
+  $("extra_" + CSS.escape(name)).innerHTML = `
+    <textarea id="desc_${esc(name)}" data-desc="${esc(name)}" rows="2"
+      placeholder="错误说明（供系统学习，不对外展示）：错在哪 / 以后怎么匹配，如「该客户税率固定为 CN VAT13」"></textarea>
+    <div class="mem-options">${memoryControl}</div>`;
+  const ta = document.getElementById("desc_" + CSS.escape(name));
+  if (ta) ta.addEventListener("input", () => { descriptions[name] = ta.value; });
+}
+
+function renderItems() {
+  const schema = order.item_schema || {};
+  const cols = Object.keys(schema).length ? Object.keys(schema)
+    : (items[0] ? Object.keys(items[0]) : []);
+  if (!cols.length) { $("itemsCard").classList.add("hidden"); return; }
+  $("itemsCard").classList.remove("hidden");
+  const head = `<tr>${cols.map(c => `<th>${(schema[c] && schema[c].required) ? '<span style="color:var(--red)">*</span>' : ""}${esc((schema[c] && schema[c].label) || c)}${schema[c] && schema[c].editable === false ? " 🔒" : ""}</th>`).join("")}${order.items_editable ? '<th class="op-col">操作</th>' : ""}</tr>`;
+  const bodyRows = items.map((row, idx) => `<tr>${cols.map(c => `<td>${itemCell(row, idx, c, schema[c] || {})}</td>`).join("")}${order.items_editable ? `<td class="op-col"><button class="btn small red" data-del-row="${idx}">删行</button></td>` : ""}</tr>`).join("");
+  $("itemsTable").innerHTML = head + bodyRows;
+  if (!items.length) {
+    $("itemsHint").innerHTML = '<div class="msg info">该订单暂无产品行（智眸未提取到行项目，产品金额可在 ePortal 核对）。点「＋ 加一行」手动补充产品明细，或直接填写下方出现的输入框。</div>';
+  } else {
+    $("itemsHint").innerHTML = "";
+  }
+  $("itemsActions").innerHTML = order.items_editable
+    ? '<button id="btnAddRow" class="btn small purple">＋ 加一行</button>'
+    : '<span class="kv">产品行由 ePortal 控制，当前不可编辑</span>';
+
+  $("itemsTable").querySelectorAll("input[data-item],select[data-item]").forEach(inp => {
+    const ev = inp.tagName === "SELECT" ? "change" : "input";
+    inp.addEventListener(ev, () => {
+      const rowIdx = parseInt(inp.dataset.item);
+      const col = inp.dataset.col;
+      items[rowIdx][col] = inp.value;
+      itemsDirty = true;
+    });
+  });
+  $("itemsTable").querySelectorAll("button[data-del-row]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      items.splice(parseInt(btn.dataset.delRow), 1);
+      itemsDirty = true;
+      renderItems();
+    });
+  });
+  const add = document.getElementById("btnAddRow");
+  if (add) add.addEventListener("click", () => {
+    const row = {};
+    Object.keys(schema).forEach(c => { if (schema[c].editable !== false) row[c] = ""; });
+    items.push(row);
+    itemsDirty = true;
+    renderItems();
+  });
+}
+
+function itemCell(row, idx, col, meta) {
+  const value = row[col] == null ? "" : String(row[col]);
+  const editable = order.items_editable && meta.editable !== false && col !== "line_id";
+  if (!editable) {
+    return `<input type="text" value="${esc(value)}" readonly disabled>`;
+  }
+  if (meta.type === "select" && (meta.options || []).length) {
+    return `<select data-item="${idx}" data-col="${esc(col)}">
+      ${meta.options.map(o => `<option value="${esc(o)}" ${o === value ? "selected" : ""}>${esc(o)}</option>`).join("")}
+      ${value && !meta.options.includes(value) ? `<option value="${esc(value)}" selected>${esc(value)}</option>` : ""}
+    </select>`;
+  }
+  if (meta.type === "number") {
+    return `<input type="number" step="any" value="${esc(value)}" data-item="${idx}" data-col="${esc(col)}">`;
+  }
+  return `<input type="text" value="${esc(value)}" data-item="${idx}" data-col="${esc(col)}">`;
+}
+
+function renderAttachments() {
+  if (!attachments.length) { $("attachList").innerHTML = '<span class="kv">无附件槽位</span>'; return; }
+  $("attachList").innerHTML = attachments.map((a, idx) => `
+    <div class="attach-row">
+      <div class="att-name">${esc(a.name || a.id)}${a.required ? ' <span class="req">*</span>' : ""}</div>
+      <div class="att-state">${a.uploaded ? "已上传" : "未上传（文件内容请在 ePortal 上传，T 只同步元数据）"}</div>
+      ${a.removable && a.uploaded ? `<button class="btn small red" data-del-att="${idx}">删除</button>` : '<span class="badge off">不可删除</span>'}
+    </div>`).join("");
+  $("attachList").querySelectorAll("button[data-del-att]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      attachments.splice(parseInt(btn.dataset.delAtt), 1);
+      attachmentsDirty = true;
+      renderAttachments();
+    });
+  });
+}
+
+$("btnSave").addEventListener("click", async () => {
+  // 错误说明：仅提交非空项
+  const error_descriptions = {};
+  Object.entries(descriptions).forEach(([k, v]) => { if (v && v.trim()) error_descriptions[k] = v.trim(); });
+  const memory_choices = {}, feedback_choices = {};
+  Object.keys(edits).forEach(name => {
+    const fb = document.querySelector(`input[name="fb_${CSS.escape(name)}"]:checked`);
+    const mc = document.querySelector(`input[name="mc_${CSS.escape(name)}"]:checked`);
+    if (fb) feedback_choices[name] = fb.value;
+    if (mc) memory_choices[name] = mc.value;
+  });
+  const payload = {
+    expected_version: order.version,
+    changes: { ...edits },
+    items: itemsDirty ? items : null,
+    attachments: attachmentsDirty ? attachments : null,
+    error_descriptions,
+    memory_choices,
+    feedback_choices,
+  };
+  $("btnSave").disabled = true;
+  try {
+    const res = await api("/api/eportal/orders/current/save", { method: "POST", body: payload });
+    $("editMsg").innerHTML = `<div class="msg ok">${esc(res.message)}</div>`;
+    lastSavedOrderId = order.order_id;
+    $("confirmText").textContent =
+      `修改已完成并同步回写 ePortal（新版本 v${res.order.version}）。是否返回 ePortal 查看该订单？`;
+    $("confirmModal").classList.remove("hidden");
+    await loadCurrent();  // 留在本页时也已刷新为最新数据
+  } catch (e) {
+    if (e.status === 409) {
+      $("editMsg").innerHTML = `<div class="msg err">${esc(e.message)}</div>`;
+      $("btnReload").classList.remove("hidden");  // 409：不覆盖 ePortal 新版本，提示刷新
+    } else {
+      $("editMsg").innerHTML = `<div class="msg err">${esc(e.message)}</div>`;
+    }
+  } finally {
+    $("btnSave").disabled = false;
+  }
+});
+
+$("btnBack").addEventListener("click", () => { location.href = "/eportal"; });
+
+init();
+</script>
+</body>
+</html>

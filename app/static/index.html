@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>T 系统 · 兑换记忆库管理</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="wrap">
+  <div class="nav">
+    <strong style="color:var(--purple)">T 系统</strong>
+    <a href="/" class="active">记忆库管理</a>
+    <a href="/intake">智眸推送演示</a>
+    <a href="/eportal">ePortal 演示</a>
+    <span class="spacer"></span>
+    <span id="who" class="kv"></span>
+    <button id="btnLogout" class="btn gray small hidden">退出登录</button>
+  </div>
+
+  <div id="loginCard" class="card" style="max-width:420px">
+    <h2>登录（管理员）</h2>
+    <div class="form-grid">
+      <label>用户名</label><input id="liUser" value="admin">
+      <label>密码</label><input id="liPass" type="password" value="admin123">
+    </div>
+    <div class="mt"><button id="btnLogin" class="btn purple">登录</button>
+      <span class="kv">演示账号：admin/admin123（管理员）、sales1/sales123（业务员）</span></div>
+    <div id="loginMsg"></div>
+  </div>
+
+  <div id="main" class="hidden">
+    <div class="card">
+      <h2>记忆规则列表</h2>
+      <div class="toolbar">
+        <input id="fCustomer" placeholder="客户名筛选">
+        <input id="fField" placeholder="字段名筛选">
+        <select id="fStatus"><option value="">全部状态</option><option value="enabled">启用</option><option value="disabled">停用</option></select>
+        <select id="fType"><option value="">全部类型</option><option value="permanent">长期</option><option value="once">单次</option></select>
+        <button id="btnQuery" class="btn">查询</button>
+        <button id="btnNew" class="btn purple">＋ 新建规则</button>
+        <button id="btnHistory" class="btn gray">全量操作历史</button>
+      </div>
+
+      <div id="newRuleCard" class="hidden" style="background:#faf5ff;border:1px solid #ddd6fe;border-radius:8px;padding:12px;margin-bottom:12px">
+        <div class="form-grid">
+          <label>客户名（锚定键）</label><input id="nrCustomer" placeholder="如 Acme Trading Co.">
+          <label>字段名</label><input id="nrField" placeholder="如 Tax Structure">
+          <label>原值</label><input id="nrOld" placeholder="如 13%">
+          <label>修改值</label><input id="nrNew" placeholder="如 CN VAT13">
+          <label>规则类型</label>
+          <select id="nrType"><option value="permanent">长期（永久生效）</option><option value="once">单次（消费一次失效）</option></select>
+          <label>可用次数（单次）</label><input id="nrCount" type="number" value="1" min="1">
+        </div>
+        <div class="mt"><button id="btnSaveRule" class="btn purple">保存</button>
+          <button id="btnCancelRule" class="btn gray">取消</button></div>
+        <div id="nrMsg"></div>
+      </div>
+
+      <div style="overflow:auto">
+        <table>
+          <thead><tr>
+            <th>ID</th><th>客户名</th><th>字段名</th><th>原值 → 修改值</th><th>类型</th><th>状态</th>
+            <th>剩余次数</th><th>命中次数</th><th>最近命中</th><th>更新人/时间</th><th>操作</th>
+          </tr></thead>
+          <tbody id="ruleRows"><tr><td colspan="11" class="muted">加载中…</td></tr></tbody>
+        </table>
+      </div>
+      <div id="ruleMsg"></div>
+    </div>
+
+    <div id="detailCard" class="card hidden">
+      <h2 id="detailTitle">规则明细</h2>
+      <div class="tabs">
+        <div class="tab active" data-tab="hits">命中明细（hit_log）</div>
+        <div class="tab" data-tab="history">变更历史（history）</div>
+      </div>
+      <div id="tabHits" style="overflow:auto"></div>
+      <div id="tabHistory" class="hidden" style="overflow:auto"></div>
+    </div>
+
+    <div id="globalHistoryCard" class="card hidden">
+      <h2>全量操作历史</h2>
+      <div class="toolbar">
+        <input id="ghOrder" placeholder="订单ID" style="width:110px">
+        <select id="ghType"><option value="">全部类型</option>
+          <option value="manual_modify">人工修改</option><option value="rule_override">规则覆盖</option>
+          <option value="rule_toggle">规则启停</option><option value="once_modify">单次修改</option>
+          <option value="rule_delete">规则删除</option><option value="memory_record">记忆记入</option>
+          <option value="rule_create">规则新建</option></select>
+        <input id="ghField" placeholder="字段名">
+        <button id="btnGhQuery" class="btn">查询</button>
+        <button id="btnGhClose" class="btn gray">收起</button>
+      </div>
+      <div id="ghBody" style="overflow:auto;max-height:420px"></div>
+    </div>
+  </div>
+</div>
+
+<script src="/static/common.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+let currentRuleId = null;
+
+function initTop() {
+  if (API.user) {
+    $("who").textContent = `已登录：${API.user.display_name}（${API.user.role === "admin" ? "管理员" : API.user.role}）`;
+    $("btnLogout").classList.remove("hidden");
+    $("loginCard").classList.add("hidden");
+    $("main").classList.remove("hidden");
+    loadRules();
+  }
+}
+
+$("btnLogin").onclick = async () => {
+  try {
+    const u = await API.fetch("/api/auth/login", { method: "POST", body: JSON.stringify({ username: $("liUser").value, password: $("liPass").value }) });
+    API.setSession(u); initTop();
+  } catch (e) { $("loginMsg").innerHTML = msgHtml("err", e.message); }
+};
+$("btnLogout").onclick = () => { API.clearSession(); location.reload(); };
+
+async function loadRules() {
+  const q = new URLSearchParams();
+  if ($("fCustomer").value) q.set("customer", $("fCustomer").value);
+  if ($("fField").value) q.set("field", $("fField").value);
+  if ($("fStatus").value) q.set("status", $("fStatus").value);
+  if ($("fType").value) q.set("rule_type", $("fType").value);
+  try {
+    const rows = await API.fetch("/api/rules?" + q.toString());
+    $("ruleRows").innerHTML = rows.length ? rows.map(r => `
+      <tr>
+        <td>${r.id}</td><td>${esc(r.customer_name)}</td><td>${esc(r.field_name)}</td>
+        <td class="mono">${esc(r.old_value)} → <b>${esc(r.new_value)}</b></td>
+        <td>${ruleTypeBadge(r.rule_type)}</td>
+        <td>${r.status === "enabled" ? '<span class="badge on">启用</span>' : '<span class="badge off">停用</span>'}</td>
+        <td>${r.rule_type === "once" ? r.effective_count : "—"}</td>
+        <td>${r.hit_count}</td>
+        <td class="kv">${esc(r.last_hit_time || "—")}</td>
+        <td class="kv">${esc(r.updated_by)}<br>${esc(r.updated_at || "")}</td>
+        <td>
+          <button class="btn small ${r.status === "enabled" ? "gray" : "green"}" onclick="toggleRule(${r.id},'${r.status === "enabled" ? "disabled" : "enabled"}')">${r.status === "enabled" ? "停用" : "启用"}</button>
+          <button class="btn small red" onclick="deleteRule(${r.id})">删除</button>
+          <button class="btn small" onclick="showDetail(${r.id})">明细</button>
+        </td>
+      </tr>`).join("") : '<tr><td colspan="11" class="muted">暂无规则（T2 人工修改沉淀或管理员新建）</td></tr>';
+  } catch (e) { $("ruleMsg").innerHTML = msgHtml("err", e.message); if (e.status === 401) logoutHint(); }
+}
+$("btnQuery").onclick = loadRules;
+
+function logoutHint() { $("ruleMsg").innerHTML = msgHtml("err", "请先以管理员登录"); }
+
+$("btnNew").onclick = () => $("newRuleCard").classList.toggle("hidden");
+$("btnCancelRule").onclick = () => $("newRuleCard").classList.add("hidden");
+$("btnSaveRule").onclick = async () => {
+  try {
+    await API.fetch("/api/rules", { method: "POST", body: JSON.stringify({
+      customer_name: $("nrCustomer").value, field_name: $("nrField").value,
+      old_value: $("nrOld").value, new_value: $("nrNew").value,
+      rule_type: $("nrType").value, effective_count: parseInt($("nrCount").value || "1") }) });
+    $("nrMsg").innerHTML = msgHtml("ok", "规则已创建");
+    $("newRuleCard").classList.add("hidden");
+    loadRules();
+  } catch (e) { $("nrMsg").innerHTML = msgHtml("err", e.message); }
+};
+
+async function toggleRule(id, status) {
+  try { await API.fetch(`/api/rules/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) }); loadRules(); if (currentRuleId === id) showDetail(id); }
+  catch (e) { $("ruleMsg").innerHTML = msgHtml("err", e.message); }
+}
+async function deleteRule(id) {
+  if (!confirm("确认删除该规则？操作将留痕于 history。")) return;
+  try { await API.fetch(`/api/rules/${id}`, { method: "DELETE" }); loadRules(); if (currentRuleId === id) $("detailCard").classList.add("hidden"); }
+  catch (e) { $("ruleMsg").innerHTML = msgHtml("err", e.message); }
+}
+
+document.querySelectorAll(".tabs .tab").forEach(t => t.onclick = () => {
+  document.querySelectorAll(".tabs .tab").forEach(x => x.classList.remove("active"));
+  t.classList.add("active");
+  $("tabHits").classList.toggle("hidden", t.dataset.tab !== "hits");
+  $("tabHistory").classList.toggle("hidden", t.dataset.tab !== "history");
+});
+
+async function showDetail(id) {
+  currentRuleId = id;
+  $("detailCard").classList.remove("hidden");
+  $("detailTitle").textContent = `规则明细 #${id}`;
+  try {
+    const hits = await API.fetch(`/api/rules/${id}/hits`);
+    $("tabHits").innerHTML = hits.length ? `<table><thead><tr><th>时间</th><th>命中</th><th>订单</th><th>表单ID</th><th>字段</th><th>原值</th><th>应用值</th></tr></thead><tbody>${
+      hits.map(h => `<tr><td class="kv">${esc(h.hit_time)}</td><td>${h.hit ? '<span class="badge memory">命中</span>' : "—"}</td><td>${h.order_id || "—"}</td><td class="mono">${esc(h.form_id || "—")}</td><td>${esc(h.field_name)}</td><td class="mono">${esc(h.value_before)}</td><td class="mono">${esc(h.value_after || "—")}</td></tr>`).join("")}</tbody></table>`
+      : '<p class="muted">暂无命中记录</p>';
+    const hist = await API.fetch(`/api/rules/${id}/history`);
+    $("tabHistory").innerHTML = renderHistory(hist);
+  } catch (e) { $("tabHits").innerHTML = msgHtml("err", e.message); }
+}
+
+function renderHistory(rows) {
+  if (!rows.length) return '<p class="muted">暂无记录</p>';
+  return `<table><thead><tr><th>时间</th><th>操作人</th><th>类型</th><th>订单</th><th>字段</th><th>前值</th><th>后值</th><th>备注</th></tr></thead><tbody>${
+    rows.map(h => `<tr><td class="kv">${esc(h.op_time)}</td><td>${esc(h.operator_name)}</td><td><span class="badge zhimou">${esc(h.op_type_label)}</span></td><td>${h.order_id || "—"}</td><td>${esc(h.field_name || "—")}</td><td class="mono">${esc(h.value_before ?? "—")}</td><td class="mono">${esc(h.value_after ?? "—")}</td><td class="kv">${esc(h.remark || "")}</td></tr>`).join("")}</tbody></table>`;
+}
+
+$("btnHistory").onclick = async () => {
+  $("globalHistoryCard").classList.remove("hidden");
+  await queryGlobalHistory();
+};
+$("btnGhClose").onclick = () => $("globalHistoryCard").classList.add("hidden");
+$("btnGhQuery").onclick = queryGlobalHistory;
+async function queryGlobalHistory() {
+  const q = new URLSearchParams();
+  if ($("ghOrder").value) q.set("order_id", $("ghOrder").value);
+  if ($("ghType").value) q.set("op_type", $("ghType").value);
+  if ($("ghField").value) q.set("field", $("ghField").value);
+  try { $("ghBody").innerHTML = renderHistory(await API.fetch("/api/history?" + q.toString())); }
+  catch (e) { $("ghBody").innerHTML = msgHtml("err", e.message); }
+}
+
+initTop();
+</script>
+</body>
+</html>

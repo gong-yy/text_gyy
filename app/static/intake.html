@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>模拟智眸 · 识别结果推送</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="wrap" style="max-width:980px">
+  <div class="nav">
+    <strong style="color:var(--blue)">模拟智眸 · 识别结果推送</strong>
+    <a href="/">记忆库管理</a>
+    <a href="/intake" class="active">推送</a>
+    <a href="/eportal">ePortal 演示</a>
+    <span class="spacer"></span>
+    <span class="kv">服务账号：zhimou / zhimou123</span>
+  </div>
+
+  <div class="card">
+    <h2>推送参数（接口 1：智眸 → T，JSON）</h2>
+    <div class="form-grid">
+      <label>客户名（记忆锚定键）</label><input id="customer" value="Acme Trading Co.">
+      <label>智眸 taskID</label><input id="taskId" placeholder="留空自动生成">
+    </div>
+    <div class="mt">
+      <div class="toolbar"><span class="kv">识别字段：</span>
+        <button id="btnAddRow" class="btn small gray">＋ 加字段</button>
+        <select id="preset" style="width:auto">
+          <option value="">— 选择示例 —</option>
+          <option value="acme">示例：Acme（命中税率+签约公司规则）</option>
+          <option value="format">示例：格式差异（0.13 / 全角 / 大小写空格）</option>
+        </select>
+      </div>
+      <div id="rows"></div>
+    </div>
+    <div class="mt">
+      <button id="btnPush" class="btn blue">推送 → T 系统（T1 匹配 + 建单）</button>
+    </div>
+    <div id="pushMsg"></div>
+  </div>
+
+  <div id="resultCard" class="card hidden">
+    <h2>推送结果</h2>
+    <div id="resultBody"></div>
+  </div>
+</div>
+
+<script src="/static/common.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+
+function addRow(k = "", v = "") {
+  const div = document.createElement("div");
+  div.className = "toolbar row";
+  div.style.marginBottom = "6px";
+  div.innerHTML = `<input class="rk" placeholder="字段名" style="width:280px" value="${esc(k)}">
+    <input class="rv" placeholder="值" style="flex:1" value="${esc(v)}">
+    <button class="btn small gray" onclick="this.parentNode.remove()">删</button>`;
+  $("rows").appendChild(div);
+}
+
+const PRESETS = {
+  acme: [
+    ["Quotation Ref/PO No", "DLN-SZ-20260901"],
+    ["Customer Name", "Acme Trading Co."],
+    ["Tax Structure", "13%"],
+    ["签约公司", "shanghai"],
+    ["Customer Payment Term", "30D"],
+    ["Customer Delivery Address", "1 Test Road, Shanghai"],
+  ],
+  format: [
+    ["Customer Name", " acme TRADING co. "],
+    ["Tax Structure", "0.13"],
+    ["签约公司", "ＳＨＡＮＧＨＡＩ"],
+  ],
+};
+$("preset").onchange = e => {
+  (PRESETS[e.target.value] || []).forEach(([k, v]) => addRow(k, v));
+  e.target.value = "";
+};
+$("btnAddRow").onclick = () => addRow();
+
+PRESETS.acme.forEach(([k, v]) => addRow(k, v));
+
+$("btnPush").onclick = async () => {
+  const fields = {};
+  document.querySelectorAll("#rows .row").forEach(r => {
+    const k = r.querySelector(".rk").value.trim();
+    if (k) fields[k] = r.querySelector(".rv").value;
+  });
+  try {
+    const res = await API.fetch("/api/intake", {
+      method: "POST",
+      headers: { "X-User-Token": "tok-zhimou-001" },  // 服务账号（模拟智眸系统）
+      body: JSON.stringify({ customer_name: $("customer").value, fields, task_id: $("taskId").value || null }),
+    });
+    $("pushMsg").innerHTML = "";
+    $("resultCard").classList.remove("hidden");
+    const applied = (res.applied_memory || []).map(a =>
+      `<tr><td>${esc(a.field)}</td><td class="mono">${esc(a.original_value)}</td><td class="mono"><b>${esc(a.applied_value)}</b></td><td>记忆 #${a.rule_id}</td></tr>`).join("");
+    $("resultBody").innerHTML =
+      msgHtml(res.status === "created" ? "ok" : "err", `${res.message}　订单 #${res.order_id}　表单 ${res.form_id || "—"}`) +
+      `<h2 class="mt">T1 命中归因（自动修改的字段）</h2>
+       ${applied ? `<table><thead><tr><th>字段</th><th>智眸原值</th><th>自动改为</th><th>依据</th></tr></thead><tbody>${applied}</tbody></table>` : '<p class="muted">本次无记忆命中，全部保持智眸原值。</p>'}
+       <div class="mt"><a class="btn green" href="/eportal">去 ePortal 查看/核对预订单</a></div>`;
+  } catch (e) {
+    $("pushMsg").innerHTML = msgHtml("err", e.message + (e.status === 403 ? "（需要服务账号权限）" : ""));
+  }
+};
+</script>
+</body>
+</html>
