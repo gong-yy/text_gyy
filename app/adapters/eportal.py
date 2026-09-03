@@ -5,6 +5,7 @@
 - 回写：T2 → ePortal，按表单 ID 同步修改后数据，幂等键 = 表单ID + 版本号；
 - 入口：ePortal 订单页【修改】按钮 → T2（携带表单ID/订单ID + 身份令牌），在 mock 演示页实现。
 """
+import json
 import secrets
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -24,6 +25,47 @@ FAULT = {"update_fail_times": 0}
 # 金额类计算列/字段默认只读：由 ePortal 计算与校验，T 不得覆盖
 _CALC_FIELDS = {"unit_cost", "total_cost", "total_price", "tax_payable", "gp", "gp_percent",
                 "line_total", "amount", "total", "no"}
+_LEGACY_CALC_PRODUCT_FIELDS = _CALC_FIELDS | {"tax_pyable"}
+_LEGACY_CREATE_FIELDS = (
+    "so", "so1", "date", "term", "buyer", "prior", "sf_no", "stage", "location", "original",
+    "presales", "ratifier", "salesman", "applicant", "user_name", "buyer_boss", "buyer_mail",
+    "customer_id", "applicant_id", "sales_person", "user_contact", "customer_name", "delivery_date",
+    "exchange_rate", "quotation_ref", "ratifier_mail", "applicant_mail", "sales_bundling",
+    "buyer_boss_mail", "customer_address", "es_salesman_code", "customer_payment_term",
+    "total_gp", "product_gp", "service_gp", "total_amount", "total_revenue", "product_amount",
+    "product_revenue", "service_amount", "service_revenue",
+)
+_CANONICAL_TO_LEGACY = {
+    "Customer ID": "customer_id",
+    "Sales Person": "sales_person",
+    "Presales": "presales",
+    "Quotation Ref / PO No": "quotation_ref",
+    "Date": "date",
+    "Exchange Rate (for foreign currency)": "exchange_rate",
+    "Customer Delivery Address": "customer_address",
+    "End User Name": "user_name",
+    "End User Contact": "user_contact",
+    "Estimated Delivery Date To Customer": "delivery_date",
+    "Tax Structure": "tax_structure",
+    "Customer Payment Term": "customer_payment_term",
+    "产品含税总金额": "product_amount",
+    "服务含税总金额": "service_amount",
+    "合同含税总金额": "total_amount",
+    "产品不含税总金额": "product_revenue",
+    "服务不含税总金额": "service_revenue",
+    "合同不含税总金额": "total_revenue",
+    "产品GP%": "product_gp",
+    "服务GP%": "service_gp",
+    "合同总GP%": "total_gp",
+    "Sales Bundling": "sales_bundling",
+    "SF No.": "sf_no",
+}
+_CANONICAL_PRODUCT_TO_LEGACY = {
+    "product_part_no": "product_id",
+    "vendor_part_no": "PN",
+    "cost_currency": "currency",
+    "price_currency": "price",
+}
 
 
 class EPortalError(Exception):
@@ -32,6 +74,33 @@ class EPortalError(Exception):
 
 class EPortalConflictError(EPortalError):
     """ePortal rejected a versioned update because the order has changed."""
+
+
+def _legacy_products(items: list | None) -> list:
+    """Build ePortal's legacy products array without changing source values."""
+    rows = []
+    for item in items or []:
+        row = {key: value for key, value in dict(item or {}).items() if key not in {"line_id"}}
+        for source, target in _CANONICAL_PRODUCT_TO_LEGACY.items():
+            if source in row:
+                row[target] = row.pop(source)
+        rows.append(row)
+    return rows
+
+
+def legacy_create_payload(customer_name: str, fields: dict, items: list | None) -> dict:
+    """Create the historical ePortal form payload carried by multipart field `data`."""
+    values = dict(fields or {})
+    payload = {key: "" for key in _LEGACY_CREATE_FIELDS}
+    for source, target in _CANONICAL_TO_LEGACY.items():
+        if source in values:
+            payload[target] = values[source]
+    for key in _LEGACY_CREATE_FIELDS:
+        if key in values:
+            payload[key] = values[key]
+    payload["customer_name"] = customer_name or payload["customer_name"]
+    payload["products"] = _legacy_products(items)
+    return payload
 
 
 def _schema_entry(value, editable: bool = True, required: bool = False, type_: str = "text",
@@ -138,7 +207,8 @@ class EPortalAdapter(ABC):
         """Apply versioned edits to ePortal and return its complete updated order."""
 
     @abstractmethod
-    def create_order(self, db: Session, customer_name: str, fields: dict, auto_modified: dict) -> CreateResult:
+    def create_order(self, db: Session, customer_name: str, fields: dict, auto_modified: dict,
+                     items: list | None = None) -> CreateResult:
         """建单：生成预订单草稿，返回表单 ID。"""
 
     @abstractmethod
@@ -315,8 +385,8 @@ class MockEPortalAdapter(EPortalAdapter):
 class HttpEPortalAdapter(EPortalAdapter):
     """真实 ePortal REST 对接（契约细节落地后按实际报文调整）。"""
 
-    def _headers(self) -> dict:
-        h = {"Content-Type": "application/json"}
+    def _headers(self, *, json_content: bool = True) -> dict:
+        h = {"Content-Type": "application/json"} if json_content else {}
         if settings.eportal_service_token:
             h["Authorization"] = f"Bearer {settings.eportal_service_token}"
         if settings.eportal_api_key:
@@ -359,11 +429,13 @@ class HttpEPortalAdapter(EPortalAdapter):
             headers=self._headers(), timeout=15,
         ))
 
-    def create_order(self, db: Session, customer_name: str, fields: dict, auto_modified: dict) -> CreateResult:
+    def create_order(self, db: Session, customer_name: str, fields: dict, auto_modified: dict,
+                     items: list | None = None) -> CreateResult:
+        payload = legacy_create_payload(customer_name, fields, items)
         resp = httpx.post(
             settings.eportal_base_url + settings.eportal_create_path,
-            json={"customer_name": customer_name, "fields": fields, "auto_modified": auto_modified},
-            headers=self._headers(),
+            files={"data": (None, json.dumps(payload, ensure_ascii=False), "application/json")},
+            headers=self._headers(json_content=False),
             timeout=15,
         )
         data = self._check(resp)

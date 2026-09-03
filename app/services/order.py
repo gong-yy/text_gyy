@@ -30,13 +30,13 @@ def intake(
     fields: dict,
     task_id: str | None = None,
     meta: dict | None = None,
+    items: list | None = None,
 ) -> Order:
     """② 智眸流转 → T1 匹配 → ③ 建单送 ePortal。"""
-    if not (customer_name or "").strip():
-        raise BizError(400, "缺少客户名（记忆锚定键必需）")
     from ..eportal_schema import HEADER_FIELDS, split_zhimou_items
 
-    scalar_fields, items = split_zhimou_items(fields or {})  # 智眸产品行列 → 结构化产品行
+    scalar_fields, parsed_items = split_zhimou_items(fields or {})  # 智眸产品行列 → 结构化产品行
+    items = items if items is not None else parsed_items
     all_fields = {meta[0]: "" for meta in HEADER_FIELDS}  # canonical 全量表单都过 T1（空值填充依赖此语义）
     all_fields.update(scalar_fields)
     order = Order(
@@ -54,7 +54,10 @@ def intake(
     )
     db.add(order)
     db.flush()
-    apply_memory(db, order)  # 命中改 / 未命中保持；hit_log 命中与未命中均记录
+    # 客户名为空时无法形成可靠的记忆锚定键：仅透传智眸原始数据给 ePortal，
+    # 不查询或写入兑换记忆命中记录。
+    if order.customer_name:
+        apply_memory(db, order)  # 命中改 / 未命中保持；hit_log 命中与未命中均记录
     flag_modified(order, "payload")  # flush 后原地改 JSON，需显式标记变更才能持久化
     auto_modified = {a["field"]: {"rule_id": a["rule_id"]} for a in order.payload["applied_memory"]}
     try:

@@ -22,7 +22,7 @@ _DEFAULTS = {
         "ticket_ttl_seconds": "300",
     },
     "auth": {"mode": "mock"},
-    "agent": {"endpoint": "", "api_key": "", "timeout_seconds": "30"},
+    "agent": {"endpoint": "", "model": "", "api_key": "", "timeout_seconds": "30"},
     "normalize": {"steps": "trim,full2half,lower,collapse_spaces,percent_decimal"},
     "lock": {"ttl_seconds": "300"},
     "writeback": {"max_retries": "3", "retry_backoff_seconds": "0.5"},
@@ -68,6 +68,7 @@ class Settings:
         )
         self.ticket_ttl_seconds = int(_get("eportal", "ticket_ttl_seconds", "T_SYSTEM_EPORTAL_TICKET_TTL") or 300)
         self.agent_endpoint = _get("agent", "endpoint", "T_SYSTEM_AGENT_ENDPOINT")
+        self.agent_model = _get("agent", "model", "T_SYSTEM_AGENT_MODEL")
         self.agent_api_key = _get("agent", "api_key", "T_SYSTEM_AGENT_API_KEY")
         self.agent_timeout = float(_get("agent", "timeout_seconds", "T_SYSTEM_AGENT_TIMEOUT") or 30)
         self.auth_mode = _get("auth", "mode", "T_SYSTEM_AUTH_MODE")

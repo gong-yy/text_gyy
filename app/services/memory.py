@@ -7,9 +7,17 @@
 from sqlalchemy.orm import Session
 
 from ..history import log
+from ..eportal_schema import is_eportal_calculated_field
 from ..models import HitLog, MemoryRule, Order
 from ..normalize import normalize_value
 from ..util import utcnow
+
+# 智眸产品标识属于原始识别结果；T 只负责透传，不能用记忆库替换。
+_PASSTHROUGH_ONLY_FIELDS = {"pid", "product_id"}
+
+
+def _is_passthrough_only(field_name: str) -> bool:
+    return str(field_name or "").strip().casefold() in _PASSTHROUGH_ONLY_FIELDS
 
 
 def find_rule(db: Session, customer_name: str, field_name: str, value: str) -> MemoryRule | None:
@@ -41,6 +49,8 @@ def apply_memory(db: Session, order: Order) -> list[dict]:
     for field, obj in fields.items():
         current = obj.get("value", "")
         original.setdefault(field, current)  # 智眸提取原值留档（记忆锚定用）
+        if _is_passthrough_only(field) or is_eportal_calculated_field(field):
+            continue
         rule = find_rule(db, order.customer_name, field, current)
         hit = rule is not None
         db.add(

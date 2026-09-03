@@ -51,6 +51,20 @@ HEADER_FIELDS: list[tuple] = [
     ("合同总GP%", "合同总GP%", "text", False, False, [], "计算汇总"),
 ]
 
+# ePortal 是金额、税额、GP 与合计的唯一计算来源。除 canonical 字段外，
+# 同时识别智眸历史报文使用的扁平字段别名，防止它们被写回 ePortal。
+CALCULATED_INPUT_FIELDS = {
+    *(meta[0] for meta in HEADER_FIELDS if not meta[4]),
+    "total_amount", "total_revenue", "product_amount", "product_revenue",
+    "service_amount", "service_revenue", "total_gp", "product_gp", "service_gp",
+}
+
+
+def is_eportal_calculated_field(name: str) -> bool:
+    return str(name or "").strip().casefold() in {
+        field.casefold() for field in CALCULATED_INPUT_FIELDS
+    }
+
 # ---- 产品行列：(col, label, type, required, editable, options) ----
 ITEM_COLUMNS: list[tuple] = [
     ("node_id", "Node ID", "select", True, True, []),

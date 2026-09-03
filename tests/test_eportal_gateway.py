@@ -1,5 +1,6 @@
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
+import json
 
 import httpx
 import pytest
@@ -88,3 +89,31 @@ def test_http_adapter_translates_update_conflict(monkeypatch):
         HttpEPortalAdapter().update_order_for_edit(
             "SO-1", {"id": "sales1", "name": "张销售"}, 3, {"ship_to": "Shanghai"}
         )
+
+
+def test_http_adapter_posts_legacy_multipart_create_payload(monkeypatch):
+    calls = []
+
+    def post(url, **kwargs):
+        calls.append((url, kwargs))
+        return httpx.Response(200, json={"form_id": "EP-1", "version": 1})
+
+    monkeypatch.setattr(eportal.httpx, "post", post)
+    monkeypatch.setattr(eportal.settings, "eportal_base_url", "https://eportal.example")
+    monkeypatch.setattr(eportal.settings, "eportal_create_path", "/legacy/create")
+
+    result = HttpEPortalAdapter().create_order(
+        None, "Acme", {"Customer ID": "C-1", "Tax Structure": "13.00", "total_amount": "999"}, {},
+        items=[{"product_id": "PC2304100024", "qty": "1", "unit_price": "10"}],
+    )
+
+    assert result.form_id == "EP-1"
+    url, kwargs = calls[0]
+    assert url == "https://eportal.example/legacy/create"
+    assert "files" in kwargs
+    payload = json.loads(kwargs["files"]["data"][1])
+    assert payload["customer_name"] == "Acme"
+    assert payload["customer_id"] == "C-1"
+    assert payload["tax_structure"] == "13.00"
+    assert payload["products"][0]["product_id"] == "PC2304100024"
+    assert payload["total_amount"] == "999"

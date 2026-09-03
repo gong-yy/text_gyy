@@ -3,7 +3,7 @@ import pytest
 
 from app.models import CorrectionCase, History, MemoryRule
 from app.normalize import normalize_value
-from app.services.correction_agent import process_case
+from app.services.correction_agent import ask_internal_model, process_case
 from conftest import (create_mock_eportal_order, create_rule, headers,
                       start_edit_session)
 
@@ -112,3 +112,32 @@ def test_agent_failure_does_not_affect_saved_order(client, session, monkeypatch)
     assert case.state == "failed"
     types = {h.op_type for h in session.query(History).all()}
     assert "agent_failed" in types
+
+
+def test_agent_calls_lm_studio_rest_v1_and_reads_structured_content(monkeypatch):
+    """LM Studio REST v1 以 system_prompt/input 收参，结果位于 content。"""
+    captured = {}
+
+    class Response:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {"content": '{"error_type":"tax_mapping","normalized_original_value":"13",'
+                               '"correct_value":"CN_VAT13","rule_type":"permanent","summary":"税务映射"}'}
+
+    def fake_post(url, *, json, headers, timeout):
+        captured.update(url=url, json=json, headers=headers, timeout=timeout)
+        return Response()
+
+    monkeypatch.setattr("app.services.correction_agent.settings.agent_endpoint", "http://10.106.4.46:1234/api/v1/chat")
+    monkeypatch.setattr("app.services.correction_agent.settings.agent_model", "qwen/qwen3.5-35b-a3b")
+    monkeypatch.setattr("app.services.correction_agent.httpx.post", fake_post)
+
+    result = ask_internal_model({"field_name": "Tax Structure", "original_value": "13%"})
+
+    assert captured["url"] == "http://10.106.4.46:1234/api/v1/chat"
+    assert captured["json"]["model"] == "qwen/qwen3.5-35b-a3b"
+    assert "system_prompt" in captured["json"]
+    assert '"field_name": "Tax Structure"' in captured["json"]["input"]
+    assert result["correct_value"] == "CN_VAT13"

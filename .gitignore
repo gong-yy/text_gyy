@@ -1,0 +1,8 @@
+__pycache__/
+*.py[cod]
+*.log
+.pytest_cache/
+.tmp/
+*.db
+style_report*.json
+~$*.docx

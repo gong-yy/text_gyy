@@ -1,4 +1,5 @@
 """提示词第六节验收标准 1~11 逐条覆盖（另含冲突/权限等补充用例）＋ ePortal ticket 驱动端到端。"""
+import json
 from app.adapters.eportal import issue_mock_ticket
 from conftest import (clean_db, create_mock_eportal_order, create_rule, eportal_form,
                       get_order, headers, intake, lock, save)  # noqa: F401
@@ -229,11 +230,46 @@ def test_extra_intake_requires_service_account(client):
     assert resp.status_code == 403
 
 
-def test_extra_intake_missing_customer_rejected(client):
+def test_extra_intake_empty_customer_passes_through_to_eportal(client):
+    create_rule(client, "", "a", "1", "should-not-apply")
     resp = client.post("/api/intake", json={"customer_name": "  ", "fields": {"a": "1"}},
                        headers=headers("zhimou"))
-    assert resp.status_code == 400
-    assert "客户名" in resp.json()["message"]
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["customer_name"] == ""
+    assert payload["status"] == "created"
+    assert payload["form_id"]
+    assert payload["applied_memory"] == []
+    assert eportal_form(client, payload["form_id"])["fields"]["a"] == "1"
+
+
+def test_extra_pid_from_zhimou_is_never_replaced_by_memory(client):
+    create_rule(client, CUSTOMER, "PID", "PC2304100024", "wrong-pid")
+    payload = intake(client, CUSTOMER, {"PID": "PC2304100024"})
+    assert payload["applied_memory"] == []
+    assert eportal_form(client, payload["form_id"])["fields"]["PID"] == "PC2304100024"
+
+
+def test_extra_zhimou_calculated_field_is_passed_through_without_memory_change(client):
+    payload = intake(client, CUSTOMER, {"产品含税总金额": "9999.99"})
+    form = eportal_form(client, payload["form_id"])
+    assert form["fields"]["产品含税总金额"] == "9999.99"
+
+
+def test_extra_zhimou_legacy_multipart_can_post_to_root_path(client):
+    legacy = {
+        "task_id": "608",
+        "customer_name": "东莞莫仕连接器有限公司",
+        "tax_structure": "13.00",
+        "products": [{"product_id": "PC2304100024", "qty": "1", "unit_price": "969.83"}],
+    }
+    resp = client.post("/", files={"data": (None, json.dumps(legacy))}, headers=headers("zhimou"))
+    assert resp.status_code == 200, resp.text
+    payload = resp.json()
+    assert payload["customer_name"] == legacy["customer_name"]
+    form = eportal_form(client, payload["form_id"])
+    assert form["fields"]["Tax Structure"] == "13.00"
+    assert form["items"][0]["product_id"] == "PC2304100024"
 
 
 def test_extra_hit_log_records_miss_and_hit(client):

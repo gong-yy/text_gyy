@@ -6,6 +6,8 @@
 - 模型只输出结构化 JSON（error_type / normalized_original_value / correct_value /
   rule_type / summary），且 correct_value 必须与人工最终值完全一致才采纳。
 """
+import json
+
 import httpx
 from sqlalchemy.orm import Session
 
@@ -17,6 +19,10 @@ from ..util import utcnow
 
 REQUIRED_KEYS = ("error_type", "normalized_original_value", "correct_value", "rule_type", "summary")
 
+_LM_STUDIO_SYSTEM_PROMPT = """你是订单纠错规则归纳助手。根据输入案例提炼一条可复用的长期规则。
+只能输出 JSON 对象，不要 Markdown、解释或代码块。必须包含 error_type、normalized_original_value、correct_value、rule_type、summary；
+rule_type 必须为 permanent，correct_value 必须严格等于案例的 final_value。"""
+
 
 class AgentError(Exception):
     pass
@@ -27,15 +33,31 @@ def ask_internal_model(payload: dict) -> dict:
     if not settings.agent_endpoint:
         raise AgentError("内部模型端点未配置（config [agent] endpoint）")
     headers = {"Content-Type": "application/json"}
-    if settings.agent_api_key:
-        headers["X-Api-Key"] = settings.agent_api_key
-    resp = httpx.post(settings.agent_endpoint, json=payload, headers=headers, timeout=settings.agent_timeout)
+    if settings.agent_model:
+        request_body = {
+            "model": settings.agent_model,
+            "system_prompt": _LM_STUDIO_SYSTEM_PROMPT,
+            "input": json.dumps(payload, ensure_ascii=False),
+        }
+    else:
+        request_body = payload
+        if settings.agent_api_key:
+            headers["X-Api-Key"] = settings.agent_api_key
+    resp = httpx.post(settings.agent_endpoint, json=request_body, headers=headers, timeout=settings.agent_timeout)
     if resp.status_code >= 400:
         raise AgentError(f"内部模型返回 HTTP {resp.status_code}")
     try:
         result = resp.json()
     except Exception as exc:
         raise AgentError(f"内部模型响应不是有效 JSON：{exc}")
+    if settings.agent_model:
+        content = result.get("content") if isinstance(result, dict) else None
+        if not isinstance(content, str):
+            raise AgentError("LM Studio 响应缺少字符串 content")
+        try:
+            result = json.loads(content)
+        except json.JSONDecodeError as exc:
+            raise AgentError(f"LM Studio content 不是有效 JSON：{exc}")
     if not isinstance(result, dict):
         raise AgentError("内部模型响应须为 JSON 对象")
     return result
