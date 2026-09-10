@@ -402,6 +402,8 @@ class MockEPortalAdapter(EPortalAdapter):
         fields = dict(row.fields or {})
         fields.update(changed_fields)
         row.fields = fields
+        if items is not None:
+            row.items = items
         row.version = max(row.version or 1, version)
         db.add(EportalWriteLog(form_id=form_id, version=version, payload=dict(changed_fields)))
         db.flush()

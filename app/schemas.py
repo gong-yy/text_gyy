@@ -32,6 +32,7 @@ class LockRequest(BaseModel):
 class SaveChangesRequest(BaseModel):
     """T2 保存：字段新值 + 记忆确认选项 + 负反馈选项。"""
     changes: dict[str, object] = Field(default_factory=dict)          # {字段: 新值}
+    items: list[dict] | None = None                                   # 产品行；None 表示不修改
     # 记忆确认（默认长期规则）：permanent 长期 / once 仅本次单次 / none 不记忆
     memory_choices: dict[str, str] = Field(default_factory=dict)
     # 负反馈（长期记忆命中字段被人工改写时必选）：override 覆盖原规则 / once 仅本次单次

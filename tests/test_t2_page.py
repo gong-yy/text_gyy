@@ -26,3 +26,17 @@ def test_t2_page_uses_t_system_login_and_renders_local_fields(client):
     assert "readonly" in page
     # 当前 T2 以 ePortal 表单号展示订单上下文；旧版“本地订单编号”文案已移除。
     assert "ePortal 表单" in page
+
+
+def test_t2_page_uses_costing_sheet_t_layout_and_dialog_editing(client):
+    page = client.get("/t2").text
+
+    assert "COSTING SHEET - T" in page
+    assert "costing-sheet" in page
+    assert "产品明细" in page
+    assert "附件" in page
+    assert "编辑字段" in page
+    assert "编辑产品行" in page
+    assert "同步并提交" in page
+    for removed in ("新建", "另存", "导出EXCEL", "转到T系统"):
+        assert removed not in page

@@ -163,6 +163,8 @@ def order_detail(db: Session, order: Order) -> dict:
         "original": order.payload.get("original", {}),
         "applied_memory": order.payload.get("applied_memory", []),
         "pending_writeback": order.pending_writeback,
+        "items": order.payload.get("items", []),
+        "attachments": order.payload.get("attachments", []),
         "zhimou_callback": (order.payload or {}).get("zhimou_callback"),
         "lock": {"locked_by": order.locked_by, "holder": lock_holder(order)},
         "created_at": order.created_at.isoformat(sep=" ") if order.created_at else None,
@@ -175,6 +177,7 @@ def save_changes(
     order: Order,
     operator: User,
     changes: dict,
+    items: list[dict] | None = None,
     memory_choices: dict | None = None,
     feedback_choices: dict | None = None,
 ) -> dict:
@@ -196,7 +199,10 @@ def save_changes(
         old_value = fields[field]["value"]
         if old_value != new_value:
             changed.append((field, old_value, new_value))
-    if not changed:
+    if items is not None and any(not isinstance(item, dict) for item in items):
+        raise BizError(422, "产品明细须为对象数组")
+    items_changed = items is not None and items != order.payload.get("items", [])
+    if not changed and not items_changed:
         return {"status": order.status, "changed": [], "form_id": order.form_id, "message": "无修改内容"}
 
     results = []
@@ -278,6 +284,8 @@ def save_changes(
 
         results.append({"field": field, "before": old_value, "after": new_value})
 
+    if items_changed:
+        order.payload["items"] = items
     order.version += 1
     order.pending_writeback = {"fields": {f: n for f, _, n in changed}, "version": order.version}
     flag_modified(order, "payload")

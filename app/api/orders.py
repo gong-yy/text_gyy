@@ -100,6 +100,7 @@ def save_order(order_id: int, body: SaveChangesRequest, user: User = Depends(get
             _get_order(db, order_id),
             user,
             changes=dict(body.changes),
+            items=body.items,
             memory_choices=dict(body.memory_choices),
             feedback_choices=dict(body.feedback_choices),
         )
