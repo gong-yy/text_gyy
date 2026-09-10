@@ -1,6 +1,7 @@
 """T 系统应用装配。"""
 from contextlib import asynccontextmanager
 from pathlib import Path
+from time import perf_counter
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -17,6 +18,9 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    from .logging_config import configure_runtime_logging
+
+    configure_runtime_logging().info("T 系统已启动")
     yield
 
 
@@ -31,6 +35,24 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    @app.middleware("http")
+    async def audit_http_request(request: Request, call_next):
+        """全部 HTTP 动作均落审计日志；不记录请求体、密码和令牌。"""
+        started = perf_counter()
+        try:
+            response = await call_next(request)
+        except Exception:
+            from .logging_config import audit
+
+            audit("http_error", method=request.method, path=request.url.path,
+                  duration_ms=round((perf_counter() - started) * 1000, 1))
+            raise
+        from .logging_config import audit
+
+        audit("http", method=request.method, path=request.url.path, status=response.status_code,
+              duration_ms=round((perf_counter() - started) * 1000, 1))
+        return response
 
     from .api import auth_api, eportal_session, intake, mock_eportal, orders, rules
 
@@ -66,10 +88,6 @@ def create_app() -> FastAPI:
     @app.get("/eportal")
     def page_eportal():
         return FileResponse(STATIC_DIR / "eportal.html")
-
-    @app.get("/intake")
-    def page_intake():
-        return FileResponse(STATIC_DIR / "intake.html")
 
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
     return app

@@ -26,6 +26,12 @@ _DEFAULTS = {
     "normalize": {"steps": "trim,full2half,lower,collapse_spaces,percent_decimal"},
     "lock": {"ttl_seconds": "300"},
     "writeback": {"max_retries": "3", "retry_backoff_seconds": "0.5"},
+    "attachments": {"storage_dir": str(ROOT / "uploads")},
+    "logging": {"dir": str(ROOT / "logs")},
+    "zhimou_callback": {
+        "url": "https://eportal.jos.com.cn/intellisight_jcn_test/api/t_sys_back.php",
+        "timeout_seconds": "15",
+    },
 }
 
 
@@ -77,6 +83,14 @@ class Settings:
         self.lock_ttl_seconds = int(_get("lock", "ttl_seconds", "T_SYSTEM_LOCK_TTL") or 300)
         self.max_retries = int(_get("writeback", "max_retries", "T_SYSTEM_WRITEBACK_RETRIES") or 3)
         self.retry_backoff = float(_get("writeback", "retry_backoff_seconds", "T_SYSTEM_RETRY_BACKOFF") or 0.5)
+        self.attachment_storage_dir = _get(
+            "attachments", "storage_dir", "T_SYSTEM_ATTACHMENT_STORAGE_DIR"
+        )
+        self.log_dir = _get("logging", "dir", "T_SYSTEM_LOG_DIR")
+        self.zhimou_callback_url = _get("zhimou_callback", "url", "T_SYSTEM_ZHIMOU_CALLBACK_URL")
+        self.zhimou_callback_timeout = float(
+            _get("zhimou_callback", "timeout_seconds", "T_SYSTEM_ZHIMOU_CALLBACK_TIMEOUT") or 15
+        )
 
 
 settings = Settings()

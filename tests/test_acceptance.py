@@ -171,6 +171,29 @@ def test_9_writeback_retry_and_manual_resend(client):
     assert eportal_form(client, r["form_id"])["fields"]["Customer Payment Term"] == "45D"
 
 
+def test_writeback_marks_synced_when_eportal_saved_but_response_was_lost(client, monkeypatch):
+    """ePortal 已落库但响应丢失时，以读取到的最终字段值确认回写成功。"""
+    from app.adapters.eportal import EPortalError, MockEPortalAdapter
+
+    r = intake(client, CUSTOMER, {"Customer Payment Term": "30D"})
+    original_update = MockEPortalAdapter.update_form
+
+    def update_then_lose_response(self, *args, **kwargs):
+        original_update(self, *args, **kwargs)
+        raise EPortalError("ePortal 响应连接中断")
+
+    monkeypatch.setattr(MockEPortalAdapter, "update_form", update_then_lose_response)
+    assert lock(client, r["order_id"], "sales1").status_code == 200
+
+    result = save(client, r["order_id"], {"Customer Payment Term": "45D"},
+                  memory_choices={"Customer Payment Term": "none"}).json()
+
+    assert result["status"] == "synced"
+    detail = get_order(client, r["order_id"])
+    assert detail["pending_writeback"] is None
+    assert eportal_form(client, r["form_id"])["fields"]["Customer Payment Term"] == "45D"
+
+
 # 验收 10：原值格式差异（13% vs 0.13、全半角、大小写、空格）不影响记忆命中
 def test_10_format_differences_still_hit(client):
     create_rule(client, CUSTOMER, "Tax Structure", "13%", "CN VAT13")
@@ -224,10 +247,80 @@ def test_extra_admin_only_rule_management(client):
     assert resp.status_code == 403
 
 
-def test_extra_intake_requires_service_account(client):
-    resp = client.post("/api/intake", json={"customer_name": CUSTOMER, "fields": {}},
-                       headers=headers("sales1"))
-    assert resp.status_code == 403
+def test_extra_intake_accepts_request_without_authentication(client):
+    resp = client.post("/api/intake", json={"customer_name": CUSTOMER, "fields": {}})
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "created"
+
+
+def test_http_intake_returns_eportal_failure_unchanged_and_keeps_failed_order(client, session, monkeypatch):
+    from app.adapters.eportal import CreateResult
+    from app.models import Order
+
+    class RejectingAdapter:
+        def create_order(self, *args, **kwargs):
+            return CreateResult(form_id="", version=1, accepted=False,
+                                response={"code": 0, "msg": "invalid order"})
+
+    monkeypatch.setattr("app.services.order.get_adapter", lambda: RejectingAdapter())
+    before = session.query(Order).count()
+
+    resp = client.post("/api/intake", json={"customer_name": CUSTOMER, "fields": {}})
+
+    assert resp.status_code == 200
+    assert resp.json() == {"code": 0, "msg": "invalid order"}
+    session.expire_all()
+    assert session.query(Order).count() == before + 1
+    failed = session.query(Order).order_by(Order.id.desc()).first()
+    assert failed.status == "create_failed"
+    assert failed.last_error == "invalid order"
+
+
+def test_http_intake_returns_eportal_success_unchanged_and_saves(client, session, monkeypatch):
+    from app.adapters.eportal import CreateResult
+    from app.models import Order
+
+    response = {"code": 1, "msg": "created", "data": {"reference": "EP-9"}}
+
+    class AcceptingAdapter:
+        def create_order(self, *args, **kwargs):
+            return CreateResult(form_id="", version=1, accepted=True, response=response)
+
+    monkeypatch.setattr("app.services.order.get_adapter", lambda: AcceptingAdapter())
+    before = session.query(Order).count()
+
+    resp = client.post("/api/intake", json={"customer_name": CUSTOMER, "fields": {}})
+
+    assert resp.status_code == 200
+    assert resp.json() == response
+    session.expire_all()
+    assert session.query(Order).count() == before + 1
+
+
+def test_http_intake_returns_502_and_keeps_failed_order_on_transport_error(client, session, monkeypatch):
+    from app.adapters.eportal import EPortalError
+    from app.models import Order
+
+    class OfflineAdapter:
+        def create_order(self, *args, **kwargs):
+            raise EPortalError("offline")
+
+    monkeypatch.setattr("app.services.order.get_adapter", lambda: OfflineAdapter())
+    before = session.query(Order).count()
+
+    resp = client.post("/api/intake", json={"customer_name": CUSTOMER, "fields": {}})
+
+    assert resp.status_code == 502
+    assert "offline" in resp.json()["message"]
+    session.expire_all()
+    assert session.query(Order).count() == before + 1
+    failed = session.query(Order).order_by(Order.id.desc()).first()
+    assert failed.status == "create_failed"
+    assert failed.last_error == "offline"
+
+
+def test_extra_zhimou_mock_page_is_not_exposed(client):
+    assert client.get("/intake").status_code == 404
 
 
 def test_extra_intake_empty_customer_passes_through_to_eportal(client):

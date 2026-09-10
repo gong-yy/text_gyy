@@ -10,12 +10,14 @@ import secrets
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from pathlib import Path
 from threading import Lock
 
 import httpx
 from sqlalchemy.orm import Session
 
 from ..config import settings
+from ..logging_config import audit
 from ..models import EportalOrder, EportalWriteLog
 from ..util import utcnow
 
@@ -30,7 +32,7 @@ _LEGACY_CREATE_FIELDS = (
     "so", "so1", "date", "term", "buyer", "prior", "sf_no", "stage", "location", "original",
     "presales", "ratifier", "salesman", "applicant", "user_name", "buyer_boss", "buyer_mail",
     "customer_id", "applicant_id", "sales_person", "user_contact", "customer_name", "delivery_date",
-    "exchange_rate", "quotation_ref", "ratifier_mail", "applicant_mail", "sales_bundling",
+    "exchange_rate", "quotation_ref", "ratifier_mail", "applicant_mail", "sales_bundling", "tax_structure",
     "buyer_boss_mail", "customer_address", "es_salesman_code", "customer_payment_term",
     "total_gp", "product_gp", "service_gp", "total_amount", "total_revenue", "product_amount",
     "product_revenue", "service_amount", "service_revenue",
@@ -66,6 +68,11 @@ _CANONICAL_PRODUCT_TO_LEGACY = {
     "cost_currency": "currency",
     "price_currency": "price",
 }
+_LEGACY_PRODUCT_FIELDS = (
+    "node_id", "biz_category", "product_id", "PN", "description", "qty", "currency",
+    "unit_cost", "price", "unit_price", "total_cost", "total_price", "tax_pyable", "GP",
+    "GP_percent", "supplier", "inventory_type", "warehouse", "dropship", "remarks", "notes",
+)
 
 
 class EPortalError(Exception):
@@ -76,19 +83,34 @@ class EPortalConflictError(EPortalError):
     """ePortal rejected a versioned update because the order has changed."""
 
 
-def _legacy_products(items: list | None) -> list:
+def _legacy_products(items: list | None, *, tax_structure: str = "", location: str = "") -> list:
     """Build ePortal's legacy products array without changing source values."""
     rows = []
-    for item in items or []:
-        row = {key: value for key, value in dict(item or {}).items() if key not in {"line_id"}}
+    for index, item in enumerate(items or [], start=1):
+        values = {key: value for key, value in dict(item or {}).items() if key not in {"line_id"}}
         for source, target in _CANONICAL_PRODUCT_TO_LEGACY.items():
-            if source in row:
-                row[target] = row.pop(source)
+            if source in values:
+                values[target] = values.pop(source)
+        row = {key: "" for key in _LEGACY_PRODUCT_FIELDS}
+        row.update({key: "" if value is None else value for key, value in values.items()})
+        row["node_id"] = row["node_id"] or str(index)
+        row["biz_category"] = row["biz_category"] or "BAU_BIZ"
+        row["currency"] = row["currency"] or "CNY"
+        row["price"] = row["price"] or "CNY"
+        row["tax_pyable"] = row["tax_pyable"] or tax_structure
+        row["warehouse"] = row["warehouse"] or location
+        row["dropship"] = row["dropship"] or "N"
         rows.append(row)
     return rows
 
 
-def legacy_create_payload(customer_name: str, fields: dict, items: list | None) -> dict:
+def legacy_create_payload(
+    customer_name: str,
+    fields: dict,
+    items: list | None,
+    *,
+    intellisight_id: str | None = None,
+) -> dict:
     """Create the historical ePortal form payload carried by multipart field `data`."""
     values = dict(fields or {})
     payload = {key: "" for key in _LEGACY_CREATE_FIELDS}
@@ -99,7 +121,18 @@ def legacy_create_payload(customer_name: str, fields: dict, items: list | None) 
         if key in values:
             payload[key] = values[key]
     payload["customer_name"] = customer_name or payload["customer_name"]
-    payload["products"] = _legacy_products(items)
+    payload["stage"] = payload["stage"] or "0"
+    payload["date"] = payload["date"] or datetime.now().date().isoformat()
+    payload["exchange_rate"] = payload["exchange_rate"] or "1"
+    payload["sales_bundling"] = payload["sales_bundling"] or "Product only"
+    payload["service_amount"] = payload["service_amount"] or "0"
+    payload["service_revenue"] = payload["service_revenue"] or "0"
+    payload["total_gp"] = payload["total_gp"] or payload["product_gp"]
+    if intellisight_id:
+        payload["intellisight_id"] = str(intellisight_id)
+    payload["products"] = _legacy_products(
+        items, tax_structure=str(payload["tax_structure"] or ""), location=str(payload["location"] or "")
+    )
     return payload
 
 
@@ -140,6 +173,8 @@ def _ensure_ids(rows: list, id_key: str, prefix: str) -> list:
 class CreateResult:
     form_id: str
     version: int
+    accepted: bool = True
+    response: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -208,12 +243,14 @@ class EPortalAdapter(ABC):
 
     @abstractmethod
     def create_order(self, db: Session, customer_name: str, fields: dict, auto_modified: dict,
-                     items: list | None = None) -> CreateResult:
+                     items: list | None = None, intellisight_id: str | None = None,
+                     attachments: list[dict] | None = None) -> CreateResult:
         """建单：生成预订单草稿，返回表单 ID。"""
 
     @abstractmethod
-    def update_form(self, db: Session, form_id: str, changed_fields: dict, version: int) -> dict:
-        """回写：按表单 ID 同步修改后字段（幂等键 表单ID+版本号）。失败抛 EPortalError。"""
+    def update_form(self, db: Session, form_id: str, changed_fields: dict, version: int,
+                    items: list | None = None, intellisight_id: str | None = None) -> dict:
+        """回写：携带智眸订单号同步修改后字段；失败抛 EPortalError。"""
 
     @abstractmethod
     def get_form(self, db: Session, form_id: str) -> dict:
@@ -325,7 +362,8 @@ class MockEPortalAdapter(EPortalAdapter):
     # ---- 旧版兼容链路（intake 建单 / 回写重试演示） ----
 
     def create_order(self, db: Session, customer_name: str, fields: dict, auto_modified: dict,
-                     items: list | None = None, attachments: list | None = None) -> CreateResult:
+                     items: list | None = None, attachments: list | None = None,
+                     intellisight_id: str | None = None) -> CreateResult:
         from ..eportal_schema import default_attachments, default_item_schema, merge_order_fields
 
         n = (db.query(EportalOrder.id).count() or 0) + 1
@@ -346,7 +384,8 @@ class MockEPortalAdapter(EPortalAdapter):
         db.flush()
         return CreateResult(form_id=form_id, version=1)
 
-    def update_form(self, db: Session, form_id: str, changed_fields: dict, version: int) -> dict:
+    def update_form(self, db: Session, form_id: str, changed_fields: dict, version: int,
+                    items: list | None = None, intellisight_id: str | None = None) -> dict:
         replay = (
             db.query(EportalWriteLog)
             .filter(EportalWriteLog.form_id == form_id, EportalWriteLog.version == version)
@@ -430,26 +469,81 @@ class HttpEPortalAdapter(EPortalAdapter):
         ))
 
     def create_order(self, db: Session, customer_name: str, fields: dict, auto_modified: dict,
-                     items: list | None = None) -> CreateResult:
-        payload = legacy_create_payload(customer_name, fields, items)
-        resp = httpx.post(
-            settings.eportal_base_url + settings.eportal_create_path,
-            files={"data": (None, json.dumps(payload, ensure_ascii=False), "application/json")},
-            headers=self._headers(json_content=False),
-            timeout=15,
+                     items: list | None = None, intellisight_id: str | None = None,
+                     attachments: list[dict] | None = None) -> CreateResult:
+        payload = legacy_create_payload(customer_name, fields, items, intellisight_id=intellisight_id)
+        multipart_files = {"data": (None, json.dumps(payload, ensure_ascii=False), "application/json")}
+        if attachments:
+            # list preserves repeated multipart field names used by some 智眸 uploads.
+            multipart_files = list(multipart_files.items()) + [
+                (
+                    str(attachment["field_name"]),
+                    (
+                    str(attachment["filename"]),
+                    Path(str(attachment["path"])).read_bytes(),
+                        str(attachment.get("content_type") or "application/octet-stream"),
+                    ),
+                )
+                for attachment in attachments
+            ]
+        try:
+            audit("eportal_create_requested", intellisight_id=intellisight_id or "",
+                  attachment_count=len(attachments or []), item_count=len(items or []))
+            resp = httpx.post(
+                settings.eportal_base_url + settings.eportal_create_path,
+                files=multipart_files,
+                headers=self._headers(json_content=False),
+                timeout=15,
+            )
+            data = self._check(resp)
+            audit("eportal_create_responded", intellisight_id=intellisight_id or "",
+                  http_status=resp.status_code, response_json=json.dumps(data, ensure_ascii=False))
+        except httpx.RequestError as exc:
+            audit("eportal_create_transport_error", intellisight_id=intellisight_id or "", reason=str(exc))
+            raise EPortalError(f"ePortal 连接失败：{exc}") from exc
+        except ValueError as exc:
+            audit("eportal_create_invalid_response", intellisight_id=intellisight_id or "", reason=str(exc))
+            raise EPortalError("ePortal 返回内容不是有效 JSON") from exc
+        accepted = str(data.get("code")) == "1"
+        return CreateResult(
+            form_id=str(data.get("id") or data.get("form_id") or data.get("order_id") or ""),
+            version=int(data.get("version", 1)),
+            accepted=accepted,
+            response=data,
         )
-        data = self._check(resp)
-        return CreateResult(form_id=str(data["form_id"]), version=int(data.get("version", 1)))
 
-    def update_form(self, db: Session, form_id: str, changed_fields: dict, version: int) -> dict:
-        url = settings.eportal_base_url + settings.eportal_update_path.format(form_id=form_id)
-        resp = httpx.put(
-            url,
-            json={"fields": changed_fields, "version": version},  # 幂等键：表单ID+版本号
-            headers=self._headers(),
-            timeout=15,
-        )
-        return self._check(resp)
+    def update_form(self, db: Session, form_id: str, changed_fields: dict, version: int,
+                    items: list | None = None, intellisight_id: str | None = None) -> dict:
+        """复用 entry 接口回写完整订单，并携带智眸订单号供 ePortal 定位。"""
+        payload = legacy_create_payload("", changed_fields, items, intellisight_id=intellisight_id)
+        payload["id"] = form_id
+        try:
+            audit("eportal_writeback_requested", intellisight_id=intellisight_id or "", form_id=form_id,
+                  version=version, item_count=len(items or []))
+            resp = httpx.post(
+                settings.eportal_base_url + settings.eportal_create_path,
+                files={"data": (None, json.dumps(payload, ensure_ascii=False), "application/json")},
+                headers=self._headers(json_content=False),
+                timeout=15,
+            )
+            data = self._check(resp)
+            audit("eportal_writeback_responded", intellisight_id=intellisight_id or "", form_id=form_id,
+                  http_status=resp.status_code, response_json=json.dumps(data, ensure_ascii=False))
+        except httpx.RequestError as exc:
+            audit("eportal_writeback_transport_error", intellisight_id=intellisight_id or "", form_id=form_id,
+                  reason=str(exc))
+            raise EPortalError(f"ePortal 连接失败：{exc}") from exc
+        except ValueError as exc:
+            audit("eportal_writeback_invalid_response", intellisight_id=intellisight_id or "", form_id=form_id,
+                  reason=str(exc))
+            raise EPortalError("ePortal 返回内容不是有效 JSON") from exc
+        if str(data.get("code")) != "1":
+            audit("eportal_writeback_rejected", intellisight_id=intellisight_id or "", form_id=form_id,
+                  code=data.get("code"), message=data.get("msg") or "")
+            raise EPortalError(f"ePortal 回写失败：{data.get('msg') or data}")
+        audit("eportal_writeback_accepted", intellisight_id=intellisight_id or "", form_id=form_id,
+              code=data.get("code"), eportal_id=data.get("id") or "")
+        return data
 
     def get_form(self, db: Session, form_id: str) -> dict:
         url = settings.eportal_base_url + settings.eportal_get_path.format(form_id=form_id)

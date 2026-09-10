@@ -21,6 +21,7 @@ class IntakeRequest(BaseModel):
     customer_name: str
     fields: dict[str, object] = Field(default_factory=dict)
     task_id: str | None = None
+    intellisight_id: str | None = None
     meta: dict | None = None
 
 

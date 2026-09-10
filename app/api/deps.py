@@ -24,6 +24,34 @@ def get_current_user(
     return user
 
 
+def get_t2_operator(
+    authorization: str | None = Header(None),
+    x_user_token: str | None = Header(None, alias="X-User-Token"),
+    db: Session = Depends(get_db),
+) -> User:
+    """T2 专用身份：有有效令牌时保留真实人员；ePortal 直达时使用系统操作人。"""
+    raw = None
+    if authorization and authorization.lower().startswith("bearer "):
+        raw = authorization[7:].strip()
+    raw = raw or (x_user_token.strip() if x_user_token else None)
+    if raw:
+        user = resolve_token(db, raw)
+        if not user:
+            raise HTTPException(status_code=401, detail="身份令牌无效或已停用")
+        return user
+
+    user = db.query(User).filter(User.username == "t2_system").one_or_none()
+    if user is None:
+        user = User(
+            username="t2_system", display_name="T2 直接访问",
+            password_hash="", role="service", enabled=True,
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+    return user
+
+
 def require_admin(user: User = Depends(get_current_user)) -> User:
     if user.role != "admin":
         raise HTTPException(status_code=403, detail="需要管理员权限")

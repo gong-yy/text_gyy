@@ -1,27 +1,28 @@
-"""Task 4：T2 页面契约 —— ticket 启动（URL 不带 token/身份）、错误说明控件、动态 schema 渲染。"""
+"""T2 页面契约：本地 order_id 启动、T 系统登录态与 ePortal 同步重发。"""
 
 
-def test_t2_page_uses_ticket_bootstrap_and_has_error_description_control(client):
+def test_t2_page_uses_local_order_bootstrap(client):
     page = client.get("/t2").text
-    assert "/api/eportal/session" in page
-    assert "error_descriptions" in page
+    assert "/api/orders/${orderId}" in page
+    assert "/api/orders/lookup" in page
+    assert "/lock" in page
+    assert "/save" in page
+    assert "ticket" not in page
     assert 'params.get("token")' not in page
-    assert 'params.get("ticket")' in page
-    # 保存后确认弹窗：是否返回 ePortal
-    assert "是否返回 ePortal" in page
-    # 下拉支持自定义值
-    assert "其他（自定义）" in page
+    assert 'get("order_id")' in page
+    assert 'get("intellisight_id")' in page
+    assert 'get("form_id")' not in page
+    # 进入时不展示历史回写状态；提交后仅弹出成功/失败结果。
+    assert "statusBadge(order.status)" not in page
+    assert "重新同步" not in page
+    assert 'alert(result.status === "synced" ? "提交成功" : "提交失败")' in page
 
 
-def test_t2_page_renders_by_declared_field_types(client):
+def test_t2_page_uses_t_system_login_and_renders_local_fields(client):
     page = client.get("/t2").text
-    # 文本/日期/布尔/下拉/只读 控件类型
-    assert 'type="date"' in page or "type=\"date\"" in page or "input_date" in page
-    assert "checkbox" in page
-    assert "<select" in page
+    assert "/static/common.js" in page
+    assert "API.user" in page
+    assert "data-field" in page
     assert "readonly" in page
-    # 产品行与附件区
-    assert "items" in page
-    assert "attachments" in page
-    # 不渲染独立登录控件 / Agent 输出
-    assert "登录" not in page.split("</script>")[0] or "no-login" in page
+    # 当前 T2 以 ePortal 表单号展示订单上下文；旧版“本地订单编号”文案已移除。
+    assert "ePortal 表单" in page

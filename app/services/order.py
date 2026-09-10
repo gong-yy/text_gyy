@@ -3,12 +3,14 @@
 """
 import re
 import time
+from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 
 from ..adapters.eportal import EPortalConflictError, EPortalError, get_adapter
 from ..config import settings
+from ..logging_config import audit
 from ..history import log
 from ..lock import is_locked_by_other, lock_holder, release
 from ..models import CorrectionCase, HitLog, MemoryRule, Order, User
@@ -23,6 +25,12 @@ class BizError(Exception):
         super().__init__(message)
 
 
+@dataclass
+class IntakeOutcome:
+    order: Order | None
+    eportal_response: dict | None = None
+
+
 def intake(
     db: Session,
     *,
@@ -31,7 +39,8 @@ def intake(
     task_id: str | None = None,
     meta: dict | None = None,
     items: list | None = None,
-) -> Order:
+    attachments: list[dict] | None = None,
+) -> IntakeOutcome:
     """② 智眸流转 → T1 匹配 → ③ 建单送 ePortal。"""
     from ..eportal_schema import HEADER_FIELDS, split_zhimou_items
 
@@ -58,6 +67,13 @@ def intake(
     # 不查询或写入兑换记忆命中记录。
     if order.customer_name:
         apply_memory(db, order)  # 命中改 / 未命中保持；hit_log 命中与未命中均记录
+    if attachments:
+        from .attachments import store_intake_attachments
+
+        stored_attachments = store_intake_attachments(attachments, task_id, order.id)
+        order.payload["attachments"] = stored_attachments
+    else:
+        stored_attachments = []
     flag_modified(order, "payload")  # flush 后原地改 JSON，需显式标记变更才能持久化
     auto_modified = {a["field"]: {"rule_id": a["rule_id"]} for a in order.payload["applied_memory"]}
     try:
@@ -67,15 +83,39 @@ def intake(
             {f: o["value"] for f, o in order.payload["fields"].items()},
             auto_modified,
             items=items or None,
+            intellisight_id=order.zhimou_task_id,
+            attachments=stored_attachments or None,
         )
         order.form_id = res.form_id
         order.version = res.version
         order.status = "created"
     except EPortalError as exc:
-        order.status = "create_failed"  # 建单失败：留待处理列表，可 T2 修改后重提
+        order.status = "create_failed"
         order.last_error = str(exc)
+        db.commit()
+        from .zhimou_callback import report_final_result
+
+        report_final_result(db, order, success=False, msg=str(exc))
+        raise BizError(502, f"请求 ePortal 建单失败：{exc}") from exc
+    if not res.accepted:
+        order.status = "create_failed"
+        order.last_error = str((res.response or {}).get("msg") or "ePortal 创单失败")
+        db.commit()
+        from .zhimou_callback import report_final_result
+
+        report_final_result(db, order, success=False, msg=order.last_error)
+        return IntakeOutcome(order=order, eportal_response=res.response or {})
     db.commit()
-    return order
+    from .zhimou_callback import report_final_result
+
+    report_final_result(
+        db,
+        order,
+        success=True,
+        msg="ePortal 创单成功",
+        eportal_id=order.form_id,
+    )
+    return IntakeOutcome(order=order, eportal_response=res.response)
 
 
 def _field_template(db: Session, customer_name: str) -> dict:
@@ -123,6 +163,7 @@ def order_detail(db: Session, order: Order) -> dict:
         "original": order.payload.get("original", {}),
         "applied_memory": order.payload.get("applied_memory", []),
         "pending_writeback": order.pending_writeback,
+        "zhimou_callback": (order.payload or {}).get("zhimou_callback"),
         "lock": {"locked_by": order.locked_by, "holder": lock_holder(order)},
         "created_at": order.created_at.isoformat(sep=" ") if order.created_at else None,
         "updated_at": order.updated_at.isoformat(sep=" ") if order.updated_at else None,
@@ -258,6 +299,8 @@ def _writeback(db: Session, order: Order) -> bool:
     pw = order.pending_writeback
     if not pw:
         return True
+    audit("writeback_started", order_id=order.id, intellisight_id=order.zhimou_task_id or "",
+          status=order.status, form_id=order.form_id or "")
     if not order.form_id:
         try:
             res = get_adapter().create_order(
@@ -265,32 +308,76 @@ def _writeback(db: Session, order: Order) -> bool:
                 order.customer_name,
                 {f: o["value"] for f, o in order.payload["fields"].items()},
                 {},
+                intellisight_id=order.zhimou_task_id,
             )
             order.form_id = res.form_id
             order.version = res.version
             order.status = "created"
             order.pending_writeback = None
             order.last_error = None
+            audit("writeback_create_succeeded", order_id=order.id, intellisight_id=order.zhimou_task_id or "",
+                  form_id=order.form_id or "")
             return True
         except EPortalError as exc:
             order.status = "create_failed"
             order.last_error = str(exc)
+            audit("writeback_create_failed", order_id=order.id, intellisight_id=order.zhimou_task_id or "",
+                  reason=str(exc))
             return False
     last_error: Exception | None = None
     for _ in range(settings.max_retries + 1):
         try:
-            get_adapter().update_form(db, order.form_id, pw["fields"], pw["version"])
+            all_fields = {
+                field: entry.get("value", "")
+                for field, entry in (order.payload.get("fields") or {}).items()
+            }
+            get_adapter().update_form(
+                db, order.form_id, all_fields, pw["version"],
+                items=order.payload.get("items") or None,
+                intellisight_id=order.zhimou_task_id,
+            )
             order.status = "synced"
             order.pending_writeback = None
             order.last_error = None
+            audit("writeback_succeeded", order_id=order.id, intellisight_id=order.zhimou_task_id or "",
+                  form_id=order.form_id or "", attempt=_ + 1)
             return True
         except EPortalError as exc:
             last_error = exc
+            audit("writeback_attempt_failed", order_id=order.id, intellisight_id=order.zhimou_task_id or "",
+                  form_id=order.form_id or "", attempt=_ + 1, reason=str(exc))
             if settings.retry_backoff > 0:
                 time.sleep(settings.retry_backoff)
+    if _eportal_matches_pending_writeback(db, order, pw):
+        order.status = "synced"
+        order.pending_writeback = None
+        order.last_error = None
+        audit("writeback_confirmed_after_response_error", order_id=order.id,
+              intellisight_id=order.zhimou_task_id or "", form_id=order.form_id or "")
+        return True
     order.status = "sync_failed"
     order.last_error = str(last_error)
+    audit("writeback_failed", order_id=order.id, intellisight_id=order.zhimou_task_id or "",
+          form_id=order.form_id or "", reason=order.last_error)
     return False
+
+
+def _eportal_matches_pending_writeback(db: Session, order: Order, pending: dict) -> bool:
+    """在回写响应异常后，读取 ePortal 当前值确认本次字段是否已实际落库。"""
+    try:
+        remote_fields = (get_adapter().get_form(db, order.form_id) or {}).get("fields") or {}
+    except EPortalError as exc:
+        audit("writeback_confirmation_failed", order_id=order.id,
+              intellisight_id=order.zhimou_task_id or "", form_id=order.form_id or "", reason=str(exc))
+        return False
+
+    for field, expected in (pending.get("fields") or {}).items():
+        remote = remote_fields.get(field)
+        if isinstance(remote, dict):
+            remote = remote.get("value")
+        if ("" if remote is None else str(remote)) != ("" if expected is None else str(expected)):
+            return False
+    return True
 
 
 def resend(db: Session, order: Order) -> dict:

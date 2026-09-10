@@ -91,12 +91,12 @@ def test_http_adapter_translates_update_conflict(monkeypatch):
         )
 
 
-def test_http_adapter_posts_legacy_multipart_create_payload(monkeypatch):
+def test_http_adapter_posts_eportal_multipart_create_payload(monkeypatch):
     calls = []
 
     def post(url, **kwargs):
         calls.append((url, kwargs))
-        return httpx.Response(200, json={"form_id": "EP-1", "version": 1})
+        return httpx.Response(200, json={"code": 1, "msg": "success", "id": "EP-1001"})
 
     monkeypatch.setattr(eportal.httpx, "post", post)
     monkeypatch.setattr(eportal.settings, "eportal_base_url", "https://eportal.example")
@@ -105,15 +105,83 @@ def test_http_adapter_posts_legacy_multipart_create_payload(monkeypatch):
     result = HttpEPortalAdapter().create_order(
         None, "Acme", {"Customer ID": "C-1", "Tax Structure": "13.00", "total_amount": "999"}, {},
         items=[{"product_id": "PC2304100024", "qty": "1", "unit_price": "10"}],
+        intellisight_id="T000001",
     )
 
-    assert result.form_id == "EP-1"
+    assert result.form_id == "EP-1001"
     url, kwargs = calls[0]
     assert url == "https://eportal.example/legacy/create"
     assert "files" in kwargs
     payload = json.loads(kwargs["files"]["data"][1])
+    assert payload["stage"] == "0"
+    assert payload["exchange_rate"] == "1"
+    assert payload["sales_bundling"] == "Product only"
+    assert payload["service_amount"] == "0"
+    assert payload["service_revenue"] == "0"
+    assert payload["intellisight_id"] == "T000001"
+    assert "t_order" not in payload
     assert payload["customer_name"] == "Acme"
     assert payload["customer_id"] == "C-1"
     assert payload["tax_structure"] == "13.00"
     assert payload["products"][0]["product_id"] == "PC2304100024"
+    assert payload["products"][0]["node_id"] == "1"
+    assert payload["products"][0]["biz_category"] == "BAU_BIZ"
+    assert payload["products"][0]["currency"] == "CNY"
+    assert payload["products"][0]["price"] == "CNY"
+    assert payload["products"][0]["warehouse"] == ""
     assert payload["total_amount"] == "999"
+
+
+def test_http_adapter_posts_update_to_entry_with_existing_id(monkeypatch):
+    calls = []
+
+    def post(url, **kwargs):
+        calls.append((url, kwargs))
+        return httpx.Response(200, json={"code": 1, "msg": "updated", "id": "EP-1001"})
+
+    monkeypatch.setattr(eportal.httpx, "post", post)
+    monkeypatch.setattr(eportal.settings, "eportal_base_url", "https://eportal.example")
+    monkeypatch.setattr(eportal.settings, "eportal_create_path", "/ae.php/api/entry")
+
+    result = HttpEPortalAdapter().update_form(
+        None, "EP-1001", {"Customer ID": "C-1", "Tax Structure": "13%"}, 2,
+        items=[{"product_id": "P-1", "qty": "2"}], intellisight_id="T001533",
+    )
+
+    assert result == {"code": 1, "msg": "updated", "id": "EP-1001"}
+    assert calls[0][0] == "https://eportal.example/ae.php/api/entry"
+    payload = json.loads(calls[0][1]["files"]["data"][1])
+    assert payload["id"] == "EP-1001"
+    assert payload["intellisight_id"] == "T001533"
+    assert payload["customer_id"] == "C-1"
+    assert payload["products"][0]["product_id"] == "P-1"
+
+
+def test_http_adapter_rejects_unsuccessful_eportal_business_response(monkeypatch):
+    monkeypatch.setattr(
+        eportal.httpx, "post", lambda *args, **kwargs: httpx.Response(200, json={"code": 0, "msg": "invalid"})
+    )
+
+    result = HttpEPortalAdapter().create_order(None, "Acme", {}, {}, items=[])
+
+    assert result.accepted is False
+    assert result.response == {"code": 0, "msg": "invalid"}
+
+
+def test_http_adapter_wraps_create_transport_error(monkeypatch):
+    def post(*args, **kwargs):
+        raise httpx.ConnectError("offline", request=httpx.Request("POST", "https://eportal.example"))
+
+    monkeypatch.setattr(eportal.httpx, "post", post)
+
+    with pytest.raises(EPortalError, match="offline"):
+        HttpEPortalAdapter().create_order(None, "Acme", {}, {}, items=[])
+
+
+def test_http_adapter_rejects_non_json_create_response(monkeypatch):
+    monkeypatch.setattr(
+        eportal.httpx, "post", lambda *args, **kwargs: httpx.Response(200, text="not-json")
+    )
+
+    with pytest.raises(EPortalError, match="JSON"):
+        HttpEPortalAdapter().create_order(None, "Acme", {}, {}, items=[])

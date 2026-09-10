@@ -92,7 +92,6 @@ $("btnPush").onclick = async () => {
   try {
     const res = await API.fetch("/api/intake", {
       method: "POST",
-      headers: { "X-User-Token": "tok-zhimou-001" },  // 服务账号（模拟智眸系统）
       body: JSON.stringify({ customer_name: $("customer").value, fields, task_id: $("taskId").value || null }),
     });
     $("pushMsg").innerHTML = "";
@@ -105,7 +104,7 @@ $("btnPush").onclick = async () => {
        ${applied ? `<table><thead><tr><th>字段</th><th>智眸原值</th><th>自动改为</th><th>依据</th></tr></thead><tbody>${applied}</tbody></table>` : '<p class="muted">本次无记忆命中，全部保持智眸原值。</p>'}
        <div class="mt"><a class="btn green" href="/eportal">去 ePortal 查看/核对预订单</a></div>`;
   } catch (e) {
-    $("pushMsg").innerHTML = msgHtml("err", e.message + (e.status === 403 ? "（需要服务账号权限）" : ""));
+    $("pushMsg").innerHTML = msgHtml("err", e.message);
   }
 };
 </script>

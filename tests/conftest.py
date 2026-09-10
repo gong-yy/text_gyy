@@ -13,6 +13,7 @@ os.environ["T_SYSTEM_EPORTAL_MODE"] = "mock"
 os.environ["T_SYSTEM_RETRY_BACKOFF"] = "0"
 os.environ["T_SYSTEM_LOCK_TTL"] = "300"
 os.environ["T_SYSTEM_WRITEBACK_RETRIES"] = "3"
+os.environ["T_SYSTEM_ATTACHMENT_STORAGE_DIR"] = str(_TMP / "uploads")
 
 import pytest  # noqa: E402
 
