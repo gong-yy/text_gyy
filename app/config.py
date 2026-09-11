@@ -19,6 +19,7 @@ _DEFAULTS = {
         "ticket_exchange_path": "/internal/t-system/tickets/exchange",
         "order_for_edit_path": "/internal/t-system/orders/{order_id}",
         "order_update_for_edit_path": "/internal/t-system/orders/{order_id}",
+        "ticket_order_path": "/ae.php/api/ticket?id={id}",
         "ticket_ttl_seconds": "300",
     },
     "auth": {"mode": "mock"},
@@ -71,6 +72,9 @@ class Settings:
         )
         self.eportal_order_update_for_edit_path = _get(
             "eportal", "order_update_for_edit_path", "T_SYSTEM_EPORTAL_ORDER_UPDATE_FOR_EDIT_PATH"
+        )
+        self.eportal_ticket_order_path = _get(
+            "eportal", "ticket_order_path", "T_SYSTEM_EPORTAL_TICKET_ORDER_PATH"
         )
         self.ticket_ttl_seconds = int(_get("eportal", "ticket_ttl_seconds", "T_SYSTEM_EPORTAL_TICKET_TTL") or 300)
         self.agent_endpoint = _get("agent", "endpoint", "T_SYSTEM_AGENT_ENDPOINT")

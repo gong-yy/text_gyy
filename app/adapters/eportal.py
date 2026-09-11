@@ -74,6 +74,101 @@ _LEGACY_PRODUCT_FIELDS = (
     "GP_percent", "supplier", "inventory_type", "warehouse", "dropship", "remarks", "notes",
 )
 
+_TICKET_FIELD_SPECS = {
+    "buyer_1": {"label": "Requester", "type": "select", "options": [
+        ("", ""), ("anniean.chen", "Anniean Chen"), ("di.wu", "Candice Wu"),
+        ("hzeng", "Helena Zeng"), ("jasmine.wu", "Wu Si Min Jasmine"),
+        ("jfeng", "Feng Jun Cici"), ("lisa.li", "Lisa Li"), ("suki.li", "Suki Li"),
+        ("yuanfeng.li", "Sophia Li"), ("zhang.jing", "Zhang Jing"), ("fern.wang", "Fern Wang"),
+    ]},
+    "tax_structure": {"label": "Tax Structure", "type": "select", "required": True, "options": [
+        ("3.00", "CN_VAT3"), ("6.00", "CN_VAT6"), ("9.00", "CN_VAT9"),
+        ("10", "CN_VAT10"), ("13.00", "CN_VAT13"), ("16.00", "CN_VAT16"), ("0", "CN_VAT0"),
+    ]},
+    "customer_payment_term": {"label": "Customer Payment Term", "type": "select", "required": True, "options": [
+        (value, value) for value in (
+            "", "0D", "0D_ForCall", "10_DEP_15D", "10_DEP_30D", "10_DEP_40_7D_50_UAT", "10D",
+            "14D", "14D_PDC", "15D", "15D_PDC", "1D", "120D", "135D", "20_DEP_30D",
+            "20_DEP_70_0D_10_UAT", "20_DEP_80_30D", "20_DEP_80_7D", "20D", "20D_PDC", "21D",
+            "21D_PDC", "23D", "25D", "26D", "30_DEP_30D", "30_DEP_50_7D_20_UAT",
+            "30_DEP_60_7D_10_UAT", "30_DEP_COD", "30D", "30D_PDC", "3D", "40D", "42D", "45D",
+            "45D_PDC", "4D", "50_DEP_0D", "50_DEP_15D", "50_DEP_30D", "50_DEP_7D", "50D", "55D",
+            "5D", "5D_10DEP_30DRECEIVED", "5D_30DEP_15D", "60D", "60D_PDC", "65D", "65D_PDC",
+            "70_DEP_15D", "70D", "75D", "7D", "7D_35RECEIVED_30DUAT", "7D_PDC", "90D", "90D_PDC",
+            "B2B", "CBD", "COD",
+        )
+    ]},
+    "location": {"label": "签约公司", "type": "select", "required": True,
+                 "options": [("", ""), ("beijing", "北京"), ("shanghai", "上海"), ("guangzhou", "广州")]},
+    "date": {"label": "Date", "type": "date", "required": True},
+    "delivery_date": {"label": "Estimated Delivery Date To Customer", "type": "date", "required": True},
+}
+_TICKET_PRODUCT_SPECS = {
+    "node_id": {"label": "Node ID", "type": "select", "required": True, "options_by_biz_category": {
+        "BAU_BIZ": ["DPG-JCSH", "DPG-JCBJ", "DPG-JCGZ", "ESG-JCSH", "ESG-JCBJ", "ESG-JCGZ"],
+        "NEW_BIZ": ["BDS-JCSH", "BDS-JCBJ", "BDS-JCGZ"],
+    }},
+    "biz_category": {"label": "BiZ Category", "type": "select", "required": True,
+                     "options": [("", ""), ("BAU_BIZ", "BAU_BIZ"), ("NEW_BIZ", "NEW_BIZ"), ("Services", "Services")]},
+    "currency": {"label": "Cost Currency", "type": "select", "options": [("", ""), ("CNY", "CNY"), ("USD", "USD"), ("MYR", "MYR"), ("SGD", "SGD")]},
+    "price": {"label": "Price Currency", "type": "select", "options": [("", ""), ("CNY", "CNY"), ("USD", "USD"), ("MYR", "MYR"), ("SGD", "SGD")]},
+    "tax_pyable": {"label": "Tax Payable", "type": "select", "options": [("13.00", "13.00"), ("9.00", "9.00"), ("6.00", "6.00"), ("3.00", "3.00"), ("0", "0")]},
+    "dropship": {"label": "Dropship", "type": "select", "options": [("", ""), ("Y", "Y"), ("N", "N")]},
+}
+_TICKET_ATTACHMENT_SLOTS = {
+    "att1": "合同/报价单/ePO", "att2": "J-FORM", "att4": "J-FORM (Approval)", "att3": "GCF",
+}
+_TICKET_METADATA_KEYS = {
+    "id", "products", "attachments", "files", "att1", "att2", "att3", "att4", "att_1", "att_2", "att_3", "att_4",
+    "create_time", "last_mod", "applicant_id", "applicant_mail", "mail_id", "mail_state", "resubmit_time", "rpa_time",
+    "rpa_return_time", "rpa_otp_time", "otp_return_time", "ratify_time", "submit_time", "submitter", "submitter_mail",
+}
+
+
+def _option_dicts(values: list[tuple[str, str]]) -> list[dict]:
+    return [{"value": value, "label": label} for value, label in values]
+
+
+def normalize_ticket_order(payload: dict) -> dict:
+    """Convert ePortal's flat ticket JSON into the model consumed by T2."""
+    fields = []
+    for name, value in payload.items():
+        if name in _TICKET_METADATA_KEYS or isinstance(value, (dict, list)):
+            continue
+        spec = _TICKET_FIELD_SPECS.get(name, {})
+        fields.append({
+            "field_name": name,
+            "label": spec.get("label", name),
+            "value": "" if value is None else str(value),
+            "type": spec.get("type", "text"),
+            "editable": not bool(spec.get("readonly", False)),
+            "required": bool(spec.get("required", False)),
+            "options": _option_dicts(spec.get("options", [])),
+        })
+    item_schema = {}
+    for name, spec in _TICKET_PRODUCT_SPECS.items():
+        entry = {"label": spec["label"], "type": spec["type"], "editable": True,
+                 "required": bool(spec.get("required", False)), "options": _option_dicts(spec.get("options", []))}
+        if "options_by_biz_category" in spec:
+            entry["options_by_biz_category"] = spec["options_by_biz_category"]
+        item_schema[name] = entry
+    for item in payload.get("products") or []:
+        for name in item:
+            item_schema.setdefault(name, {"label": name, "type": "text", "editable": name not in _CALC_FIELDS,
+                                          "required": False, "options": []})
+    attachments = []
+    for key, slot_name in _TICKET_ATTACHMENT_SLOTS.items():
+        attachment = payload.get(key)
+        if isinstance(attachment, dict) and attachment:
+            name = str(attachment.get("name") or attachment.get("filename") or "")
+            attachments.append({"id": attachment.get("id") or key, "slot_name": slot_name,
+                                "filename": name, "name": name})
+    return {
+        "id": int(payload["id"]), "form_id": str(payload["id"]), "version": int(payload.get("last_mod") or 0),
+        "fields": fields, "items": [dict(item) for item in (payload.get("products") or [])],
+        "attachments": attachments, "item_schema": item_schema,
+    }
+
 
 class EPortalError(Exception):
     pass
@@ -235,6 +330,10 @@ class EPortalAdapter(ABC):
         """Fetch the complete editable ePortal order for its authorized operator."""
 
     @abstractmethod
+    def get_ticket_order(self, eportal_id: int) -> dict:
+        """Fetch a complete ePortal order by the ePortal page's actual `id`."""
+
+    @abstractmethod
     def update_order_for_edit(
         self, order_id: str, operator: dict, expected_version: int, changes: dict,
         items: list | None = None, attachments: list | None = None,
@@ -304,6 +403,9 @@ class MockEPortalAdapter(EPortalAdapter):
             return self._order_dict(row)
         finally:
             db.close()
+
+    def get_ticket_order(self, eportal_id: int) -> dict:
+        raise EPortalError("本地 mock ePortal 不支持按远端 id 读取订单")
 
     def update_order_for_edit(
         self, order_id: str, operator: dict, expected_version: int, changes: dict,
@@ -459,6 +561,24 @@ class HttpEPortalAdapter(EPortalAdapter):
         url = settings.eportal_base_url + settings.eportal_order_for_edit_path.format(order_id=order_id)
         headers = {**self._headers(), "X-EPortal-Operator-Id": operator_id}
         return self._check(httpx.get(url, headers=headers, timeout=15))
+
+    def get_ticket_order(self, eportal_id: int) -> dict:
+        if eportal_id <= 0:
+            raise EPortalError("ePortal id 必须为正整数")
+        url = settings.eportal_base_url + settings.eportal_ticket_order_path.format(id=eportal_id)
+        try:
+            payload = self._check(httpx.get(url, headers=self._headers(), timeout=15))
+        except httpx.RequestError as exc:
+            raise EPortalError("无法连接 ePortal") from exc
+        except ValueError as exc:
+            raise EPortalError("ePortal 返回内容不是有效 JSON") from exc
+        try:
+            returned_id = int(payload.get("id"))
+        except (TypeError, ValueError) as exc:
+            raise EPortalError("ePortal 返回内容缺少有效 ID") from exc
+        if returned_id != eportal_id:
+            raise EPortalError("ePortal 返回订单 ID 不一致")
+        return normalize_ticket_order(payload)
 
     def update_order_for_edit(
         self, order_id: str, operator: dict, expected_version: int, changes: dict

@@ -7,7 +7,7 @@ def test_t2_page_uses_local_order_bootstrap(client):
     assert "/api/orders/lookup" in page
     assert "/lock" in page
     assert "/save" in page
-    assert "ticket" not in page
+    assert 'params.get("ticket")' not in page
     assert 'params.get("token")' not in page
     assert 'get("order_id")' in page
     assert 'get("intellisight_id")' in page
@@ -26,6 +26,16 @@ def test_t2_page_uses_t_system_login_and_renders_local_fields(client):
     assert "readonly" in page
     # 当前 T2 以 ePortal 表单号展示订单上下文；旧版“本地订单编号”文案已移除。
     assert "ePortal 表单" in page
+
+
+def test_t2_page_loads_eportal_ticket_order_by_actual_id_and_renders_schema_selects(client):
+    page = client.get("/t2").text
+
+    assert 'params.get("id")' in page
+    assert '/api/eportal/ticket-orders/${eportalId}' in page
+    assert 'field.type==="select"' in page
+    assert 'productColumn.options' in page
+    assert "ePortal 数据已加载；保存接口待 ePortal 提供" in page
 
 
 def test_t2_page_uses_costing_sheet_t_layout_and_dialog_editing(client):

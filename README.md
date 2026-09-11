@@ -31,6 +31,7 @@ python -m pytest tests                            # 全量测试（40 条）
 |---|---|
 | `/` | **记忆库管理界面**（管理员）：规则列表/筛选/新建/启停/删除、命中明细、变更历史、全量操作历史 |
 | `/t2?ticket=...` | **T2 修改界面**：ticket 启动（无登录页）；按 ePortal schema 渲染文本/日期/布尔/下拉/只读字段；产品行与附件编辑；每个修改字段附「错误说明（供系统学习）」与记忆方式选择（长期/单次/不记忆；长期记忆被改写时 覆盖/单次）；409 时明确提示刷新 |
+| `/t2?id=<ePortal id>` | **ePortal 订单读取页**：T 后端请求 `GET /ae.php/api/ticket?id=<id>`，展示返回的订单、产品、附件和已从 ePortal 源码提取的下拉项；ePortal 尚未提供远端保存契约时，页面不会提交修改。 |
 | `/intake` | 模拟智眸推送：体验 T1 命中归因与建单 |
 | `/eportal` | 模拟 ePortal：预订单列表（含「由记忆自动修改」标注与只读标识）、【修改】签发 ticket 跳 T2、提交订单、回写故障注入 |
 
@@ -53,6 +54,7 @@ T 以服务端凭证（`Authorization: Bearer <service_token>`）调用 ePortal 
 | `[eportal] mode` | `T_SYSTEM_EPORTAL_MODE` | `mock`（演示）/ `http`（真实） |
 | `[eportal] service_token` | `T_SYSTEM_EPORTAL_SERVICE_TOKEN` | 服务端凭证，只在服务端使用，绝不下发浏览器 |
 | `[eportal] ticket_exchange_path / order_for_edit_path / order_update_for_edit_path` | `T_SYSTEM_EPORTAL_TICKET_EXCHANGE_PATH` 等 | 内部接口路径 |
+| `[eportal] ticket_order_path` | `T_SYSTEM_EPORTAL_TICKET_ORDER_PATH` | 按 ePortal 实际主键 `id` 读取订单的路径，默认 `/ae.php/api/ticket?id={id}` |
 | `[eportal] ticket_ttl_seconds` | `T_SYSTEM_EPORTAL_TICKET_TTL` | ticket 有效期；T 编辑会话有效期不高于此值 |
 | `[agent] endpoint / api_key / timeout_seconds` | `T_SYSTEM_AGENT_ENDPOINT` 等 | 内部大模型端点；留空则案例保持 pending 不调度 |
 
@@ -65,6 +67,7 @@ T 以服务端凭证（`Authorization: Bearer <service_token>`）调用 ePortal 
 | POST | `/api/intake` | 智眸 → T：结构化字段+原值+客户名（服务账号），T1 匹配+建单 |
 | POST | `/api/eportal/session` | 一次性 ticket → 服务端编辑会话 + HttpOnly cookie `t_edit_session`（无效/已用/过期 401） |
 | GET | `/api/eportal/orders/current` | 会话内拉取当前订单（schema 化，经 ePortal 适配器） |
+| GET | `/api/eportal/ticket-orders/{id}` | T 后端读取 ePortal `ticket?id={id}` 并规范化订单、产品、附件与下拉项；不向浏览器暴露 ePortal 凭据。 |
 | POST | `/api/eportal/orders/current/save` | 版本化保存：`expected_version`+changes+items+attachments+error_descriptions(+memory/feedback choices)；409 冲突不覆盖；成功后留痕/记忆/纠正案例 |
 | GET/POST/PATCH/DELETE | `/api/rules…` | 记忆规则管理（管理员） |
 | GET | `/api/rules/{id}/hits` · `/api/rules/{id}/history` · `/api/history?form_id=&order_id=&op_type=` | 命中明细 / 规则历史 / 全量历史 |

@@ -2,7 +2,7 @@
 
 浏览器 URL 只携带一次性 opaque ticket；操作人身份只存在 T 服务端会话中。
 """
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Path, Request, Response
 from sqlalchemy.orm import Session
 
 from ..adapters.eportal import EPortalError, get_adapter
@@ -40,6 +40,15 @@ def get_edit_session(request: Request) -> EditSession:
     if session is None:
         raise HTTPException(status_code=401, detail="编辑会话无效或已过期，请从 ePortal 重新进入")
     return session
+
+
+@router.get("/ticket-orders/{eportal_id}")
+def ticket_order(eportal_id: int = Path(..., ge=1)):
+    """按 ePortal 页面实际主键 id 拉取完整订单；浏览器不直连 ePortal。"""
+    try:
+        return get_adapter().get_ticket_order(eportal_id)
+    except EPortalError as exc:
+        raise HTTPException(status_code=502, detail="无法读取 ePortal 订单") from exc
 
 
 @router.get("/orders/current")
