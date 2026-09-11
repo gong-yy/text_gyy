@@ -1,12 +1,210 @@
 <!DOCTYPE html>
-<html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>COSTING SHEET - T</title><link rel="stylesheet" href="/static/style.css"><style>
-body{margin:0;background:#fff;color:#111;font:13px Arial,"Microsoft YaHei",sans-serif}#body{min-width:1180px}.portal-head{height:82px;background:#ccc;display:flex;align-items:end;padding:0 14px}.portal-logo{width:70px;height:70px;background:#b20b43}.portal-user{margin:0 0 8px auto}.tabs{display:flex;border-bottom:1px solid #aaa;background:#fff;padding-left:10px}.tabs span{padding:6px 12px;border:1px solid #aaa;border-bottom:0;margin-right:4px;font-size:12px}.tabs .active{background:#eee;font-weight:bold}.costing-sheet{width:calc(100% - 28px);margin:12px 14px 28px}.sheet-title{font-size:28px;font-weight:bold;color:#00f;padding:6px 8px;border-bottom:1px solid #111}.sheet-note{padding:7px 8px;border:1px solid #111;border-top:0}.sheet-table{width:100%;border-collapse:collapse;border:2px solid #111;table-layout:fixed}.sheet-table th,.sheet-table td{border:1px solid #111;padding:4px 6px;vertical-align:middle;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.sheet-table th{font-size:11px;background:#999;color:#fff;text-align:center}.sheet-table .label{font-weight:600;background:#f7f7f7}.required:before{content:"*";color:#f00;margin-right:2px}.field-value{min-height:20px;display:inline-block;min-width:90px}.field-value.empty{background:#ff0}.cell-edit{float:right;border:0;background:transparent;color:#06c;cursor:pointer;font-size:14px;padding:0 0 0 6px}.section-title{margin-top:10px;padding:5px 8px;background:#000;color:#fff;font-weight:bold}.products{font-size:11px}.products td{height:25px}.products tbody tr:hover{background:#cff;cursor:pointer}.attachments{width:70%;margin-top:0}.attachments td:first-child{width:210px;background:#f7f7f7;font-weight:600}.attachment-name{color:#06c}.bottom-bar{text-align:center;padding:16px}.sync-button{border:1px solid #0f6b8f;background:#fff;color:#0f6b8f;padding:5px 14px;cursor:pointer;font-size:13px}.dialog{position:fixed;inset:0;background:rgba(0,0,0,.25);display:flex;align-items:flex-start;justify-content:center;padding-top:12vh;z-index:10}.dialog.hidden{display:none}.dialog-box{width:min(720px,88vw);max-height:76vh;overflow:auto;background:#fff;border:1px solid #999;box-shadow:2px 2px 6px #777}.dialog-head{background:#69c;color:#fff;padding:7px 10px;font-weight:bold;display:flex}.dialog-head button{margin-left:auto;border:0;background:transparent;color:#fff;font-size:20px;line-height:14px;cursor:pointer}.dialog-body{padding:14px}.dialog-body label{display:block;margin:8px 0 3px;font-weight:bold}.dialog-body input,.dialog-body textarea{box-sizing:border-box;width:100%;padding:6px;border:1px solid #999}.dialog-body textarea{min-height:70px}.dialog-foot{padding:8px 10px;text-align:right;background:#eee}.dialog-foot button{margin-left:8px;padding:4px 14px}.product-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 12px}.muted{color:#777}.hidden{display:none!important}@media(max-width:900px){#body{min-width:0}.portal-head{height:58px}.portal-logo{width:50px;height:50px}.costing-sheet{width:100%;margin:0}.sheet-table{min-width:1050px}.products-wrap{overflow:auto}.attachments{width:100%}}
-</style></head><body><div id="body"><header class="portal-head"><div class="portal-logo"></div><div class="portal-user" id="who"></div></header><nav class="tabs"><span>ePORTAL</span><span>SUMMARY</span><span class="active">COSTING SHEET - T</span></nav><main class="costing-sheet" id="main"><div class="sheet-title">COSTING SHEET - T</div><div class="sheet-note">ePortal 表单：<span id="formId"></span>　订单号：<span id="orderIdText"></span></div><div class="products-wrap"><table class="sheet-table" aria-label="订单基础信息"><tbody id="fieldRows"></tbody></table></div><div class="section-title">产品明细</div><div class="products-wrap"><table class="sheet-table products"><thead><tr id="productHead"></tr></thead><tbody id="productRows"></tbody></table></div><div class="section-title">附件</div><table class="sheet-table attachments"><tbody id="attachmentRows"></tbody></table><div class="bottom-bar"><button id="btnSubmit" class="sync-button">同步并提交</button></div></main></div><div id="editor" class="dialog hidden" role="dialog" aria-modal="true"><div class="dialog-box"><div class="dialog-head"><span id="editorTitle">编辑字段</span><button id="closeEditor" aria-label="关闭">×</button></div><div class="dialog-body" id="editorBody"></div><div class="dialog-foot"><button id="confirmEditor">确定</button></div></div></div><script src="/static/common.js"></script><script>
-const $=id=>document.getElementById(id),params=new URLSearchParams(location.search);let orderId=params.get("order_id"),intellisightId=params.get("intellisight_id"),order=null,changes={},items=[],editing=null;const productColumns=["node_id","biz_category","product_id","PN","description","qty","currency","unit_price","unit_cost","total_cost","total_price","tax_pyable","GP","GP_percent","supplier","inventory_type","warehouse","dropship","remarks"],productLabels={node_id:"Node ID",biz_category:"BiZ Category",product_id:"Product ID",PN:"PN",description:"Description",qty:"Qty",currency:"Currency",unit_price:"Unit Price",unit_cost:"Unit Cost",total_cost:"Total Cost",total_price:"Total Price",tax_pyable:"Tax",GP:"GP",GP_percent:"GP%",supplier:"Supplier",inventory_type:"Inventory",warehouse:"Warehouse",dropship:"Dropship",remarks:"Remarks"};
-function escText(v){return esc(v==null?"":String(v));}function isRequired(f){return /Sales Person|Customer Delivery Address|Quotation Ref|Customer Name|Customer ID|Estimated Delivery|Tax Structure/.test(f.label||f.field_name);}function valueFor(f){return Object.prototype.hasOwnProperty.call(changes,f.field_name)?changes[f.field_name]:f.value;}function showEditor(title,body){$("editorTitle").textContent=title;$("editorBody").innerHTML=body;$("editor").classList.remove("hidden");}function closeEditor(){$("editor").classList.add("hidden");editing=null;}
-function renderFields(){const fields=order.fields.filter(f=>f.visible!==false);let html="";for(let i=0;i<fields.length;i+=2){html+="<tr>";for(let j=0;j<2;j++){const f=fields[i+j];if(!f){html+="<td></td><td></td>";continue;}const val=valueFor(f),empty=val==null||String(val)==="",readonly=f.editable===false;html+=`<td class="label ${isRequired(f)?"required":""}">${escText(f.label)}</td><td><span class="field-value ${empty?"empty":""} ${readonly?"readonly":""}">${escText(val)}</span>${readonly?"":`<button class="cell-edit" data-field="${escText(f.field_name)}" title="编辑">✎</button>`}</td>`;}html+="</tr>";}$("fieldRows").innerHTML=html;document.querySelectorAll(".cell-edit").forEach(b=>b.addEventListener("click",()=>openField(b.dataset.field)));}function openField(name){const f=order.fields.find(x=>x.field_name===name);if(!f)return;editing={type:"field",field:f};showEditor("编辑字段",`<label>${escText(f.label)}</label><textarea id="editValue">${escText(valueFor(f))}</textarea>`);}
-function renderProducts(){$("productHead").innerHTML=productColumns.map(c=>`<th>${escText(productLabels[c])}</th>`).join("");$("productRows").innerHTML=items.length?items.map((row,i)=>`<tr data-product="${i}">${productColumns.map(c=>`<td>${escText(row[c])}</td>`).join("")}</tr>`).join(""):`<tr><td colspan="${productColumns.length}" class="muted">暂无产品明细</td></tr>`;document.querySelectorAll("tr[data-product]").forEach(r=>r.addEventListener("click",()=>openProduct(Number(r.dataset.product))));}function openProduct(index){const row=items[index]||{};editing={type:"product",index};showEditor("编辑产品行",`<div class="product-form">${productColumns.map(c=>`<div><label>${escText(productLabels[c])}</label><input data-product-field="${c}" value="${escText(row[c])}"></div>`).join("")}</div>`);}
-function renderAttachments(){const atts=order.attachments||[],names=["合同/报价单/ePO","J-FORM","J-FORM (Approval)","GCF"];$("attachmentRows").innerHTML=names.map(name=>{const a=atts.find(x=>(x.name||x.field_name)===name);return `<tr><td>${name}</td><td class="attachment-name">${a?escText(a.filename||a.name||"已上传"):""}</td></tr>`;}).join("");}function render(){$("formId").textContent=order.form_id||"";$("orderIdText").textContent=order.order_id;$("who").textContent=API.user?`操作人：${API.user.display_name||API.user.username}`:"";items=Array.isArray(order.items)?order.items.map(x=>({...x})):[];renderFields();renderProducts();renderAttachments();}
-async function load(){try{order=await API.fetch(`/api/orders/${orderId}`);await API.fetch(`/api/orders/${orderId}/lock`,{method:"POST",body:"{}"});render();}catch(e){document.body.innerHTML=`<p style="padding:20px;color:#c00">${escText(e.message)}</p>`;}}async function resolveOrderId(){if(orderId)return true;if(!intellisightId)return false;const found=await API.fetch(`/api/orders/lookup?intellisight_id=${encodeURIComponent(intellisightId)}`);orderId=String(found.order_id);return true;}
-$("closeEditor").addEventListener("click",closeEditor);$("confirmEditor").addEventListener("click",()=>{if(!editing)return;if(editing.type==="field"){changes[editing.field.field_name]=$("editValue").value;renderFields();}else{const row=items[editing.index];document.querySelectorAll("[data-product-field]").forEach(input=>row[input.dataset.productField]=input.value);renderProducts();}closeEditor();});$("btnSubmit").addEventListener("click",async()=>{const memory_choices={};Object.keys(changes).forEach(k=>memory_choices[k]="none");try{const result=await API.fetch(`/api/orders/${orderId}/save`,{method:"POST",body:JSON.stringify({changes,items,memory_choices,feedback_choices:{}})});alert(result.status === "synced" ? "提交成功" : "提交失败");changes={};await load();}catch(error){alert("提交失败");}});if(!orderId&&!intellisightId){document.body.innerHTML='<p style="padding:20px;color:#c00">缺少有效订单参数</p>';}else{resolveOrderId().then(found=>{if(found)load();}).catch(()=>{document.body.innerHTML='<p style="padding:20px;color:#c00">缺少有效订单参数</p>';});}
-</script></body></html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>COSTING SHEET - T</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <style>
+    body { margin: 0; background: #fff; color: #111; font: 13px Arial, "Microsoft YaHei", sans-serif; }
+    #body { min-width: 1180px; }
+    .portal-head { height: 82px; background: #ccc; display: flex; align-items: end; padding: 0 14px; }
+    .portal-logo { width: 70px; height: 70px; background: #b20b43; }
+    .portal-user { margin: 0 0 8px auto; }
+    .tabs { display: flex; border-bottom: 1px solid #aaa; background: #fff; padding-left: 10px; }
+    .tabs span { padding: 6px 12px; border: 1px solid #aaa; border-bottom: 0; margin-right: 4px; font-size: 12px; }
+    .tabs .active { background: #eee; font-weight: bold; }
+    .costing-sheet { width: calc(100% - 28px); margin: 12px 14px 28px; }
+    .sheet-title { font-size: 28px; font-weight: bold; color: #00f; padding: 6px 8px; border-bottom: 1px solid #111; }
+    .sheet-note { padding: 7px 8px; border: 1px solid #111; border-top: 0; }
+    .remote-note { color: #9a6700; margin-left: 12px; }
+    .sheet-table { width: 100%; border-collapse: collapse; border: 2px solid #111; table-layout: fixed; }
+    .sheet-table th, .sheet-table td { border: 1px solid #111; padding: 4px 6px; vertical-align: middle; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .sheet-table th { font-size: 11px; background: #999; color: #fff; text-align: center; }
+    .sheet-table .label { font-weight: 600; background: #f7f7f7; }
+    .required:before { content: "*"; color: #f00; margin-right: 2px; }
+    .field-value { min-height: 20px; display: inline-block; min-width: 90px; }
+    .field-value.empty { background: #ff0; }
+    .cell-edit { float: right; border: 0; background: transparent; color: #06c; cursor: pointer; font-size: 14px; padding: 0 0 0 6px; }
+    .section-title { margin-top: 10px; padding: 5px 8px; background: #000; color: #fff; font-weight: bold; }
+    .products { font-size: 11px; }
+    .products td { height: 25px; }
+    .products tbody tr:hover { background: #cff; cursor: pointer; }
+    .attachments { width: 70%; margin-top: 0; }
+    .attachments td:first-child { width: 210px; background: #f7f7f7; font-weight: 600; }
+    .attachment-name { color: #06c; }
+    .bottom-bar { text-align: center; padding: 16px; }
+    .sync-button { border: 1px solid #0f6b8f; background: #fff; color: #0f6b8f; padding: 5px 14px; cursor: pointer; font-size: 13px; }
+    .dialog { position: fixed; inset: 0; background: rgba(0,0,0,.25); display: flex; align-items: flex-start; justify-content: center; padding-top: 12vh; z-index: 10; }
+    .dialog.hidden { display: none; }
+    .dialog-box { width: min(720px,88vw); max-height: 76vh; overflow: auto; background: #fff; border: 1px solid #999; box-shadow: 2px 2px 6px #777; }
+    .dialog-head { background: #69c; color: #fff; padding: 7px 10px; font-weight: bold; display: flex; }
+    .dialog-head button { margin-left: auto; border: 0; background: transparent; color: #fff; font-size: 20px; line-height: 14px; cursor: pointer; }
+    .dialog-body { padding: 14px; }
+    .dialog-body label { display: block; margin: 8px 0 3px; font-weight: bold; }
+    .dialog-body input, .dialog-body textarea, .dialog-body select { box-sizing: border-box; width: 100%; padding: 6px; border: 1px solid #999; }
+    .dialog-body textarea { min-height: 70px; }
+    .dialog-foot { padding: 8px 10px; text-align: right; background: #eee; }
+    .dialog-foot button { margin-left: 8px; padding: 4px 14px; }
+    .product-form { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px 12px; }
+    .muted { color: #777; }
+    .hidden { display: none!important; }
+    @media(max-width:900px) { #body { min-width: 0; } .portal-head { height: 58px; } .portal-logo { width: 50px; height: 50px; } .costing-sheet { width: 100%; margin: 0; } .sheet-table { min-width: 1050px; } .products-wrap { overflow: auto; } .attachments { width: 100%; } }
+  </style>
+</head>
+<body>
+  <div id="body">
+    <header class="portal-head"><div class="portal-logo"></div><div class="portal-user" id="who"></div></header>
+    <nav class="tabs"><span>ePORTAL</span><span>SUMMARY</span><span class="active">COSTING SHEET - T</span></nav>
+    <main class="costing-sheet" id="main">
+      <div class="sheet-title">COSTING SHEET - T</div>
+      <div class="sheet-note">ePortal 表单：<span id="formId"></span>　订单号：<span id="orderIdText"></span><span id="remoteNotice" class="remote-note hidden">ePortal 数据已加载；保存接口待 ePortal 提供。</span></div>
+      <div class="products-wrap"><table class="sheet-table" aria-label="订单基础信息"><tbody id="fieldRows"></tbody></table></div>
+      <div class="section-title">产品明细</div>
+      <div class="products-wrap"><table class="sheet-table products"><thead><tr id="productHead"></tr></thead><tbody id="productRows"></tbody></table></div>
+      <div class="section-title">附件</div>
+      <table class="sheet-table attachments"><tbody id="attachmentRows"></tbody></table>
+      <div class="bottom-bar"><button id="btnSubmit" class="sync-button">同步并提交</button></div>
+    </main>
+  </div>
+  <div id="editor" class="dialog hidden" role="dialog" aria-modal="true"><div class="dialog-box"><div class="dialog-head"><span id="editorTitle">编辑字段</span><button id="closeEditor" aria-label="关闭">×</button></div><div class="dialog-body" id="editorBody"></div><div class="dialog-foot"><button id="confirmEditor">确定</button></div></div></div>
+  <script src="/static/common.js"></script>
+  <script>
+    const $ = id => document.getElementById(id);
+    const params = new URLSearchParams(location.search);
+    let eportalId = params.get("id");
+    let orderId = params.get("order_id");
+    let intellisightId = params.get("intellisight_id");
+    let order = null;
+    let changes = {};
+    let items = [];
+    let editing = null;
+    let remoteOrder = false;
+    const productColumns = ["node_id","biz_category","product_id","PN","description","qty","currency","unit_price","unit_cost","total_cost","total_price","tax_pyable","GP","GP_percent","supplier","inventory_type","warehouse","dropship","remarks"];
+    const productLabels = {node_id:"Node ID",biz_category:"BiZ Category",product_id:"Product ID",PN:"PN",description:"Description",qty:"Qty",currency:"Currency",unit_price:"Unit Price",unit_cost:"Unit Cost",total_cost:"Total Cost",total_price:"Total Price",tax_pyable:"Tax",GP:"GP",GP_percent:"GP%",supplier:"Supplier",inventory_type:"Inventory",warehouse:"Warehouse",dropship:"Dropship",remarks:"Remarks"};
+
+    function escText(value) { return esc(value == null ? "" : String(value)); }
+    function isRequired(field) { return field.required || /Sales Person|Customer Delivery Address|Quotation Ref|Customer Name|Customer ID|Estimated Delivery|Tax Structure/.test(field.label || field.field_name); }
+    function valueFor(field) { return Object.prototype.hasOwnProperty.call(changes, field.field_name) ? changes[field.field_name] : field.value; }
+    function showEditor(title, body) { $("editorTitle").textContent = title; $("editorBody").innerHTML = body; $("editor").classList.remove("hidden"); }
+    function closeEditor() { $("editor").classList.add("hidden"); editing = null; }
+    function selectControl(field, value, attribute) {
+      const choices = field.options || [];
+      return `<select ${attribute}>${choices.map(option => `<option value="${escText(option.value)}" ${String(option.value) === String(value == null ? "" : value) ? "selected" : ""}>${escText(option.label)}</option>`).join("")}</select>`;
+    }
+    function fieldControl(field, value) {
+      if (field.type==="select") return selectControl(field, value, 'id="editValue"');
+      if (field.type === "date") return `<input id="editValue" type="date" value="${escText(value)}">`;
+      return `<textarea id="editValue">${escText(value)}</textarea>`;
+    }
+    function productControl(column, row) {
+      const productColumn = (order.item_schema || {})[column] || { type: "text", options: [] };
+      const options = productColumn.options_by_biz_category
+        ? (productColumn.options_by_biz_category[row.biz_category] || []).map(value => ({ value, label: value }))
+        : (productColumn.options || []);
+      if (productColumn.type === "select") return selectControl({ options }, row[column], `data-product-field="${column}"`);
+      return `<input data-product-field="${column}" value="${escText(row[column])}">`;
+    }
+    function renderFields() {
+      const fields = order.fields.filter(field => field.visible !== false);
+      let html = "";
+      for (let index = 0; index < fields.length; index += 2) {
+        html += "<tr>";
+        for (let column = 0; column < 2; column += 1) {
+          const field = fields[index + column];
+          if (!field) { html += "<td></td><td></td>"; continue; }
+          const value = valueFor(field);
+          const empty = value == null || String(value) === "";
+          const readonly = field.editable === false;
+          html += `<td class="label ${isRequired(field) ? "required" : ""}">${escText(field.label)}</td><td><span class="field-value ${empty ? "empty" : ""} ${readonly ? "readonly" : ""}">${escText(value)}</span>${readonly ? "" : `<button class="cell-edit" data-field="${escText(field.field_name)}" title="编辑">✎</button>`}</td>`;
+        }
+        html += "</tr>";
+      }
+      $("fieldRows").innerHTML = html;
+      document.querySelectorAll(".cell-edit").forEach(button => button.addEventListener("click", () => openField(button.dataset.field)));
+    }
+    function openField(name) {
+      const field = order.fields.find(candidate => candidate.field_name === name);
+      if (!field) return;
+      editing = { type: "field", field };
+      showEditor("编辑字段", `<label>${escText(field.label)}</label>${fieldControl(field, valueFor(field))}`);
+    }
+    function renderProducts() {
+      $("productHead").innerHTML = productColumns.map(column => `<th>${escText(productLabels[column])}</th>`).join("");
+      $("productRows").innerHTML = items.length ? items.map((row, index) => `<tr data-product="${index}">${productColumns.map(column => `<td>${escText(row[column])}</td>`).join("")}</tr>`).join("") : `<tr><td colspan="${productColumns.length}" class="muted">暂无产品明细</td></tr>`;
+      document.querySelectorAll("tr[data-product]").forEach(row => row.addEventListener("click", () => openProduct(Number(row.dataset.product))));
+    }
+    function openProduct(index) {
+      const row = items[index] || {};
+      editing = { type: "product", index };
+      showEditor("编辑产品行", `<div class="product-form">${productColumns.map(column => `<div><label>${escText(productLabels[column])}</label>${productControl(column, row)}</div>`).join("")}</div>`);
+    }
+    function renderAttachments() {
+      const attachments = order.attachments || [];
+      const names = ["合同/报价单/ePO", "J-FORM", "J-FORM (Approval)", "GCF"];
+      $("attachmentRows").innerHTML = names.map(name => {
+        const attachment = attachments.find(candidate => (candidate.slot_name || candidate.name || candidate.field_name) === name);
+        return `<tr><td>${name}</td><td class="attachment-name">${attachment ? escText(attachment.filename || attachment.name || "已上传") : ""}</td></tr>`;
+      }).join("");
+    }
+    function render() {
+      $("formId").textContent = order.form_id || order.id || "";
+      $("orderIdText").textContent = order.id || order.order_id || "";
+      $("remoteNotice").classList.toggle("hidden", !remoteOrder);
+      $("who").textContent = API.user ? `操作人：${API.user.display_name || API.user.username}` : "";
+      items = Array.isArray(order.items) ? order.items.map(item => ({ ...item })) : [];
+      renderFields(); renderProducts(); renderAttachments();
+    }
+    async function load() {
+      try {
+        if (eportalId) {
+          order = await API.fetch(`/api/eportal/ticket-orders/${eportalId}`);
+          remoteOrder = true;
+        } else {
+          order = await API.fetch(`/api/orders/${orderId}`);
+          await API.fetch(`/api/orders/${orderId}/lock`, { method: "POST", body: "{}" });
+          remoteOrder = false;
+        }
+        render();
+      } catch (error) {
+        document.body.innerHTML = `<p style="padding:20px;color:#c00">${escText(error.message)}</p>`;
+      }
+    }
+    async function resolveOrderId() {
+      if (orderId) return true;
+      if (!intellisightId) return false;
+      const found = await API.fetch(`/api/orders/lookup?intellisight_id=${encodeURIComponent(intellisightId)}`);
+      orderId = String(found.order_id);
+      return true;
+    }
+
+    $("closeEditor").addEventListener("click", closeEditor);
+    $("confirmEditor").addEventListener("click", () => {
+      if (!editing) return;
+      if (editing.type === "field") {
+        changes[editing.field.field_name] = $("editValue").value;
+        renderFields();
+      } else {
+        const row = items[editing.index];
+        document.querySelectorAll("[data-product-field]").forEach(input => { row[input.dataset.productField] = input.value; });
+        renderProducts();
+      }
+      closeEditor();
+    });
+    $("btnSubmit").addEventListener("click", async () => {
+      if (remoteOrder) { alert("ePortal 已加载，但尚未配置远端保存接口，修改未提交。"); return; }
+      const memoryChoices = {};
+      Object.keys(changes).forEach(field => { memoryChoices[field] = "none"; });
+      try {
+        const result = await API.fetch(`/api/orders/${orderId}/save`, { method: "POST", body: JSON.stringify({ changes, items, memory_choices: memoryChoices, feedback_choices: {} }) });
+        alert(result.status === "synced" ? "提交成功" : "提交失败");
+        changes = {};
+        await load();
+      } catch (_) { alert("提交失败"); }
+    });
+    if (eportalId) load();
+    else if (!orderId && !intellisightId) document.body.innerHTML = '<p style="padding:20px;color:#c00">缺少有效订单参数</p>';
+    else resolveOrderId().then(found => { if (found) load(); }).catch(() => { document.body.innerHTML = '<p style="padding:20px;color:#c00">缺少有效订单参数</p>'; });
+  </script>
+</body>
+</html>
