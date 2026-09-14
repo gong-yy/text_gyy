@@ -20,6 +20,7 @@ def store_intake_attachments(attachments: list[dict], task_id: str | None, order
         stored.append({
             "field_name": str(attachment["field_name"]),
             "filename": filename,
+            "size": len(attachment["content"]),
             "content_type": str(attachment.get("content_type") or "application/octet-stream"),
             "path": str(path),
         })

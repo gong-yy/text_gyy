@@ -1,7 +1,7 @@
 """canonical ePortal COSTING SHEET schema（对照真实表单全量建模）。
 
 所有模板/建单/渲染统一从此取，字段清单：
-- 表头 32 字段（含 SO 与合计区等只读计算字段），类型 text/date/boolean/select；
+- 表头 31 字段（SO 由 ePortal 生成只读；金额/GP 汇总默认由 ePortal 计算但允许人工修改），类型 text/date/boolean/select；
 - 产品行 19 列（金额类计算列只读，由 ePortal 计算）；
 - 4 个命名附件槽（*合同/报价单/ePO、*J-FORM、*J-FORM (Approval)、GCF），文件内容归 ePortal 管理；
 - 智眸 CSV 列 → ePortal 字段映射与产品行拆分。
@@ -39,24 +39,23 @@ HEADER_FIELDS: list[tuple] = [
     ("SF No.", "SF No.", "text", False, True, [], "商务信息"),
     ("Requester", "Requester", "select", False, True, [], "商务信息"),
     ("特别条款", "特别条款", "text", False, True, [], "商务信息"),
-    # 计算汇总（ePortal 计算，只读）
-    ("产品含税总金额", "产品含税总金额", "text", False, False, [], "计算汇总"),
-    ("服务含税总金额", "服务含税总金额", "text", False, False, [], "计算汇总"),
-    ("合同含税总金额", "合同含税总金额", "text", False, False, [], "计算汇总"),
-    ("产品不含税总金额", "产品不含税总金额", "text", False, False, [], "计算汇总"),
-    ("服务不含税总金额", "服务不含税总金额", "text", False, False, [], "计算汇总"),
-    ("合同不含税总金额", "合同不含税总金额", "text", False, False, [], "计算汇总"),
-    ("产品GP%", "产品GP%", "text", False, False, [], "计算汇总"),
-    ("服务GP%", "服务GP%", "text", False, False, [], "计算汇总"),
-    ("合同总GP%", "合同总GP%", "text", False, False, [], "计算汇总"),
+    # 金额/GP 汇总（默认由 ePortal 计算，但允许业务员人工修改）
+    ("产品含税总金额", "产品含税总金额", "text", False, True, [], "计算汇总"),
+    ("服务含税总金额", "服务含税总金额", "text", False, True, [], "计算汇总"),
+    ("合同含税总金额", "合同含税总金额", "text", False, True, [], "计算汇总"),
+    ("产品不含税总金额", "产品不含税总金额", "text", False, True, [], "计算汇总"),
+    ("服务不含税总金额", "服务不含税总金额", "text", False, True, [], "计算汇总"),
+    ("合同不含税总金额", "合同不含税总金额", "text", False, True, [], "计算汇总"),
+    ("产品GP%", "产品GP%", "text", False, True, [], "计算汇总"),
+    ("服务GP%", "服务GP%", "text", False, True, [], "计算汇总"),
+    ("合同总GP%", "合同总GP%", "text", False, True, [], "计算汇总"),
 ]
 
-# ePortal 是金额、税额、GP 与合计的唯一计算来源。除 canonical 字段外，
-# 同时识别智眸历史报文使用的扁平字段别名，防止它们被写回 ePortal。
+# 金额、税额、GP 与合计字段现允许人工修改，不再视为纯计算字段；仅 ePortal
+# 生成的 SO 等字段保持只读。智眸历史报文使用的扁平字段别名（total_amount 等）
+# 仍按可编辑字段处理，可被写回 ePortal。
 CALCULATED_INPUT_FIELDS = {
     *(meta[0] for meta in HEADER_FIELDS if not meta[4]),
-    "total_amount", "total_revenue", "product_amount", "product_revenue",
-    "service_amount", "service_revenue", "total_gp", "product_gp", "service_gp",
 }
 
 

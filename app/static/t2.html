@@ -1,210 +1,236 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="zh-CN">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>COSTING SHEET - T</title>
-  <link rel="stylesheet" href="/static/style.css">
-  <style>
-    body { margin: 0; background: #fff; color: #111; font: 13px Arial, "Microsoft YaHei", sans-serif; }
-    #body { min-width: 1180px; }
-    .portal-head { height: 82px; background: #ccc; display: flex; align-items: end; padding: 0 14px; }
-    .portal-logo { width: 70px; height: 70px; background: #b20b43; }
-    .portal-user { margin: 0 0 8px auto; }
-    .tabs { display: flex; border-bottom: 1px solid #aaa; background: #fff; padding-left: 10px; }
-    .tabs span { padding: 6px 12px; border: 1px solid #aaa; border-bottom: 0; margin-right: 4px; font-size: 12px; }
-    .tabs .active { background: #eee; font-weight: bold; }
-    .costing-sheet { width: calc(100% - 28px); margin: 12px 14px 28px; }
-    .sheet-title { font-size: 28px; font-weight: bold; color: #00f; padding: 6px 8px; border-bottom: 1px solid #111; }
-    .sheet-note { padding: 7px 8px; border: 1px solid #111; border-top: 0; }
-    .remote-note { color: #9a6700; margin-left: 12px; }
-    .sheet-table { width: 100%; border-collapse: collapse; border: 2px solid #111; table-layout: fixed; }
-    .sheet-table th, .sheet-table td { border: 1px solid #111; padding: 4px 6px; vertical-align: middle; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .sheet-table th { font-size: 11px; background: #999; color: #fff; text-align: center; }
-    .sheet-table .label { font-weight: 600; background: #f7f7f7; }
-    .required:before { content: "*"; color: #f00; margin-right: 2px; }
-    .field-value { min-height: 20px; display: inline-block; min-width: 90px; }
-    .field-value.empty { background: #ff0; }
-    .cell-edit { float: right; border: 0; background: transparent; color: #06c; cursor: pointer; font-size: 14px; padding: 0 0 0 6px; }
-    .section-title { margin-top: 10px; padding: 5px 8px; background: #000; color: #fff; font-weight: bold; }
-    .products { font-size: 11px; }
-    .products td { height: 25px; }
-    .products tbody tr:hover { background: #cff; cursor: pointer; }
-    .attachments { width: 70%; margin-top: 0; }
-    .attachments td:first-child { width: 210px; background: #f7f7f7; font-weight: 600; }
-    .attachment-name { color: #06c; }
-    .bottom-bar { text-align: center; padding: 16px; }
-    .sync-button { border: 1px solid #0f6b8f; background: #fff; color: #0f6b8f; padding: 5px 14px; cursor: pointer; font-size: 13px; }
-    .dialog { position: fixed; inset: 0; background: rgba(0,0,0,.25); display: flex; align-items: flex-start; justify-content: center; padding-top: 12vh; z-index: 10; }
-    .dialog.hidden { display: none; }
-    .dialog-box { width: min(720px,88vw); max-height: 76vh; overflow: auto; background: #fff; border: 1px solid #999; box-shadow: 2px 2px 6px #777; }
-    .dialog-head { background: #69c; color: #fff; padding: 7px 10px; font-weight: bold; display: flex; }
-    .dialog-head button { margin-left: auto; border: 0; background: transparent; color: #fff; font-size: 20px; line-height: 14px; cursor: pointer; }
-    .dialog-body { padding: 14px; }
-    .dialog-body label { display: block; margin: 8px 0 3px; font-weight: bold; }
-    .dialog-body input, .dialog-body textarea, .dialog-body select { box-sizing: border-box; width: 100%; padding: 6px; border: 1px solid #999; }
-    .dialog-body textarea { min-height: 70px; }
-    .dialog-foot { padding: 8px 10px; text-align: right; background: #eee; }
-    .dialog-foot button { margin-left: 8px; padding: 4px 14px; }
-    .product-form { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px 12px; }
-    .muted { color: #777; }
-    .hidden { display: none!important; }
-    @media(max-width:900px) { #body { min-width: 0; } .portal-head { height: 58px; } .portal-logo { width: 50px; height: 50px; } .costing-sheet { width: 100%; margin: 0; } .sheet-table { min-width: 1050px; } .products-wrap { overflow: auto; } .attachments { width: 100%; } }
-  </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>COSTING SHEET - T</title>
+<link rel="stylesheet" href="/static/style.css">
+<style>
+body{font:13px Arial,"Microsoft YaHei",sans-serif;margin:0;color:#111}#body{min-width:1180px;min-height:600px}.portal-header{display:flex;align-items:end;background: #CCC}.jos{width:70px;height:70px;margin:5px;background:#b30945;color:#fff;display:grid;place-items:center;font:bold 11px Arial}.user{margin:0 8px 8px auto}.nav-tabs{display:flex;align-items:end;margin:0;padding-left:0;border-bottom:1px solid #dee2e6;list-style:none}.nav-tabs a{display:block;padding:4px 8px;color:#007bff;text-decoration:none;border:1px solid transparent}.nav-tabs .active{color:#495057;background:#fff;border-color:#dee2e6 #dee2e6 #fff;border-radius:4px 4px 0 0}.sheet{padding:0 8px 24px;overflow-x:auto}.title-row{display:flex;align-items:center}.sheet-title{font-size:28px;font-weight:bold;padding-left:10px;color:#00F}.mini-jos{margin-left:auto;width:48px;height:48px;background:#b30945;color:#fff;display:grid;place-items:center;font-size:9px}hr{margin:5px 0}.ba{border:1px solid #000}.bb{border-bottom:1px solid #000}.bc{border:1px solid #000;background:#999;color:#FFF}.bl{border-left:1px solid #000}.red{color:#F00}.cen{text-align:center}.alt{background:#FF0}.bg-black{background:#000;color:#FFF}.muted{color:#777}table{border-collapse:collapse}.form-table{min-width:1160px;border:2px solid #000}.form-table td{height:29px;white-space:nowrap;padding:2px 4px;vertical-align:middle}.form-table .field-value{min-width:120px;border-bottom:1px dotted #000;display:inline-block;cursor:pointer}.form-table .field-value:hover{background:#CFF}.fixed-note{height:30px;padding:4px 2px}.yes-no{padding:2px 4px}.yes-no span{margin-right:24px}.product-table{min-width:1900px;width:100%;border:1px solid #000;font-size:12px}.product-table th{background:#999;color:#fff;border:1px solid #000;padding:3px;text-align:center;font-weight:normal}.product-table td{height:29px;border:1px solid #000;padding:2px 3px;white-space:nowrap;cursor:pointer}.product-table tbody tr:hover{background:#CFF}.product-tools{padding:4px;border:1px solid #000;border-top:0}.summary-table{width:515px;margin-top:8px}.summary-table td{padding:3px 4px;min-width:0}.summary-label{width:165px}.summary-table .amount{width:100px;border-bottom:1px solid #999;display:inline-block;text-align:right}.attachment-table{width:900px;margin-top:8px;border:1px solid #000}.attachment-table td{height:28px;padding:4px;border:1px solid #000}.attachment-name{color:#06c}.attachment-action{width:180px}.bottom-bar{text-align:center;padding:16px}.sync-button{padding:5px 14px;border:1px solid #17a2b8;background:#fff;color:#17a2b8;font-size:13px;cursor:pointer}.dialog{position:fixed;inset:0;z-index:1050;background:rgba(0,0,0,.2);display:flex;justify-content:center;padding-top:20vh}.dialog.hidden{display:none}.dialog-box{width:500px;max-width:90vw;max-height:65vh;display:flex;flex-direction:column;border:1px solid #999;border-radius:3px;background:#fff;box-shadow:2px 2px 4px 1px #888}.box-head{display:flex;padding:5px;color:#FFF;background:#69C}.box-head button{margin-left:auto;border:0;background:transparent;color:#fff;font-size:20px;cursor:pointer}.box-body{overflow:auto;flex:1;padding:10px}.box-body input,.box-body textarea{width:100%;box-sizing:border-box;border:0;border-bottom:1px dotted #000;padding:6px}.box-body textarea{height:86px;border:1px solid #999}.box-foot{padding:5px;text-align:right;background:#999}.box-foot button{margin-left:8px;padding:4px 14px}@media(max-width:900px){#body{min-width:0}.sheet{padding:0}.portal-header{min-width:900px}}
+</style>
+<style>
+html,body{background:#fff;overflow:auto}#topHorizontalScroll{position:sticky;top:0;z-index:40;width:100%;height:18px;overflow-x:scroll;overflow-y:hidden;background:#f1f1f1}#topHorizontalScrollContent{height:1px;width:2400px}#viewport{width:auto;height:auto;overflow:visible;background:#fff}#portalCanvas{width:2400px;min-height:calc(100vh + 1px);transform:none;background:#fff}.portal-header{height:68px;background:#ccc}.jos{width:60px;height:60px;margin:4px;font-size:18px;font-weight:normal}.nav-tabs a{font-size:10px;padding:4px 8px}.sheet{padding:0 5px 24px;overflow:visible;background:#fff}.title-row{height:66px}.sheet-title{font-size:22px;padding-left:3px}.mini-jos{width:38px;height:38px;margin-right:3px}.fixed-note{height:auto;min-height:20px;line-height:20px;padding:2px 0;margin-top:4px}.yes-no{background:#ff0}.yes-no label{cursor:pointer;margin-right:12px}.yes-no input{min-width:0;width:auto}.form-table{min-width:2400px;width:2400px}.form-table td{height:21px;padding:1px 2px;font-size:10px}.form-table .field-value{min-width:0;width:132px;height:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.form-table [data-field="customer_address"]{width:360px}.form-table [data-field="sales_bundling"]{border-bottom:0}.search-button{border:0;background:transparent;color:#06f;font-size:16px;cursor:pointer}.product-table{min-width:2400px;width:2400px;font-size:10px;background:#fff}.product-table th{background:#fff!important;color:#06f;font-size:8px;font-weight:bold;line-height:10px;padding:2px}.product-table td{height:23px;font-size:10px;background:#fff}.product-tools{display:none}.summary-table{width:auto;margin-top:7px;border:0;table-layout:auto}.summary-table td{border:0;padding:6px 16px;font-size:10px;white-space:nowrap}.summary-label{width:150px}.summary-table .amount{width:120px;min-width:120px;white-space:nowrap}.attachment-table{margin-top:2px;font-size:10px}.attachment-table td{height:20px;padding:2px}.bottom-bar{text-align:left;padding:10px 0}.sync-button{background:#fff600}.dialog{padding-top:100px}.save-mode{display:flex;align-items:center;gap:14px;margin-top:5px}.save-mode>span{font-weight:bold}.save-mode label{display:inline-flex;align-items:center;gap:4px;margin:0;font-weight:normal}.box-body .save-mode input{width:auto;min-width:0;padding:0;border:0}.customer-query{display:flex;align-items:center;gap:8px}.box-body .customer-query input{width:220px;border:1px solid #999}.customer-results{margin-top:10px;border-top:1px solid #ddd}.customer-result{display:block;width:100%;padding:7px 3px;text-align:left;border:0;border-bottom:1px solid #ddd;background:#fff;color:#06c;cursor:pointer}.customer-result:hover{background:#cff}
+</style>
+<style>
+/* Keep the source-width sheet accessible at every browser zoom. */
+#portalCanvas{width:2400px}
+.search-button{display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;width:18px;height:18px;padding:0;line-height:16px;vertical-align:middle;overflow:hidden;border:0;background:transparent;color:#06f;font-size:12px;cursor:pointer}
+.summary-table .amount.editable-amount{min-width:96px;border:0;border-bottom:1px solid #999;background:transparent;cursor:pointer;box-sizing:border-box}.summary-table .amount.editable-amount:hover{background:#cff}.summary-table .amount.readonly{min-width:96px;border:0;border-bottom:1px solid #999;background:transparent;color:#777;box-sizing:border-box}
+.product-row-menu{position:relative}.product-row-menu>button{padding:0;border:0;background:transparent;color:#06c;cursor:pointer;font-size:10px}.product-action-menu{position:absolute;top:100%;left:0;z-index:30;min-width:72px;padding:2px 0;border:1px solid #888;background:#fff;box-shadow:2px 2px 4px #999}.product-action-menu[hidden]{display:none}.product-action-menu button{display:block;width:100%;padding:3px 7px;border:0;background:#fff;text-align:left;white-space:nowrap;font-size:10px;cursor:pointer}.product-action-menu button:hover{background:#f90}.product-table td.editable-product-cell{cursor:pointer}.product-table td.editable-product-cell:hover{background:#cff}.product-cell-editor{display:block;width:100%;min-height:18px;padding:0;border:0;background:transparent;color:inherit;font:inherit;text-align:inherit;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}.product-cell-editor:hover{background:#cff}
+</style>
 </head>
 <body>
-  <div id="body">
-    <header class="portal-head"><div class="portal-logo"></div><div class="portal-user" id="who"></div></header>
-    <nav class="tabs"><span>ePORTAL</span><span>SUMMARY</span><span class="active">COSTING SHEET - T</span></nav>
-    <main class="costing-sheet" id="main">
-      <div class="sheet-title">COSTING SHEET - T</div>
-      <div class="sheet-note">ePortal 表单：<span id="formId"></span>　订单号：<span id="orderIdText"></span><span id="remoteNotice" class="remote-note hidden">ePortal 数据已加载；保存接口待 ePortal 提供。</span></div>
-      <div class="products-wrap"><table class="sheet-table" aria-label="订单基础信息"><tbody id="fieldRows"></tbody></table></div>
-      <div class="section-title">产品明细</div>
-      <div class="products-wrap"><table class="sheet-table products"><thead><tr id="productHead"></tr></thead><tbody id="productRows"></tbody></table></div>
-      <div class="section-title">附件</div>
-      <table class="sheet-table attachments"><tbody id="attachmentRows"></tbody></table>
-      <div class="bottom-bar"><button id="btnSubmit" class="sync-button">同步并提交</button></div>
-    </main>
-  </div>
-  <div id="editor" class="dialog hidden" role="dialog" aria-modal="true"><div class="dialog-box"><div class="dialog-head"><span id="editorTitle">编辑字段</span><button id="closeEditor" aria-label="关闭">×</button></div><div class="dialog-body" id="editorBody"></div><div class="dialog-foot"><button id="confirmEditor">确定</button></div></div></div>
-  <script src="/static/common.js"></script>
-  <script>
-    const $ = id => document.getElementById(id);
-    const params = new URLSearchParams(location.search);
-    let eportalId = params.get("id");
-    let orderId = params.get("order_id");
-    let intellisightId = params.get("intellisight_id");
-    let order = null;
-    let changes = {};
-    let items = [];
-    let editing = null;
-    let remoteOrder = false;
-    const productColumns = ["node_id","biz_category","product_id","PN","description","qty","currency","unit_price","unit_cost","total_cost","total_price","tax_pyable","GP","GP_percent","supplier","inventory_type","warehouse","dropship","remarks"];
-    const productLabels = {node_id:"Node ID",biz_category:"BiZ Category",product_id:"Product ID",PN:"PN",description:"Description",qty:"Qty",currency:"Currency",unit_price:"Unit Price",unit_cost:"Unit Cost",total_cost:"Total Cost",total_price:"Total Price",tax_pyable:"Tax",GP:"GP",GP_percent:"GP%",supplier:"Supplier",inventory_type:"Inventory",warehouse:"Warehouse",dropship:"Dropship",remarks:"Remarks"};
+<div id="viewport">
+<div id="portalCanvas">
+<header class="portal-header">
+<div class="jos">JOS</div>
+<div class="user" id="who">
+</div>
+</header>
+<nav>
+<ul class="nav-tabs">
+<li>
+<a>ePORTAL</a>
+</li>
+<li>
+<a>SUMMARY</a>
+</li>
+<li>
+<a>New SaleOrder(so)</a>
+</li>
+<li>
+<a>New OrderToPurchase(OTP)</a>
+</li>
+<li>
+<a>SaleOrder List</a>
+</li>
+<li>
+<a>SETUP</a>
+</li>
+<li>
+<a>HELP</a>
+</li>
+<li>
+<a class="active">COSTING SHEET - T</a>
+</li>
+</ul>
+</nav>
+<div id="topHorizontalScroll" aria-label="页面横向滚动条"><div id="topHorizontalScrollContent"></div></div>
+<main class="sheet">
+<div class="title-row">
+<div class="sheet-title">COSTING SHEET - T</div>
+<div class="mini-jos">JOS</div>
+</div>
+<hr>
+<div class="fixed-note">已申请了先服务后合同/先备货后合同：<span class="yes-no"><label><input type="radio" name="prior" value="否" checked> 否</label><label><input type="radio" name="prior" value="是"> 是</label></span></div>
+<table class="form-table" aria-label="ePortal Costing Sheet 表单"><colgroup><col span="24" style="width:48px"></colgroup><tbody>
+<tr><td colspan="3"><b class="red">*</b>Sales Person:</td><td colspan="2"><span data-field="sales_person" class="field-value"></span></td><td></td><td colspan="4"><b class="red">*</b>Customer Delivery Address:</td><td colspan="3"><span data-field="customer_address" class="field-value"></span></td><td colspan="2" class="cen">SF No.</td><td colspan="3"><span data-field="sf_no" class="field-value"></span></td><td colspan="6"></td></tr>
+<tr><td colspan="3">Presales:</td><td colspan="2"><span data-field="presales" class="field-value"></span></td><td></td><td colspan="4"><b class="red">*</b>End User Name (To receive the item):</td><td colspan="3"><span data-field="user_name" class="field-value"></span></td><td colspan="2" class="cen">Requester</td><td colspan="3"><span data-field="buyer_1" class="field-value"></span></td><td colspan="6"></td></tr>
+<tr><td colspan="3"><b class="red">*</b>Quotation Ref / PO No:</td><td colspan="2"><span data-field="quotation_ref" class="field-value"></span></td><td></td><td colspan="4"><b class="red">*</b>End User Contact (To receive the item):</td><td colspan="3"><span data-field="user_contact" class="field-value"></span></td><td></td><td colspan="10"></td></tr>
+<tr><td colspan="3"><b class="red">*</b>Customer Name:</td><td colspan="2"><span data-field="customer_name" class="field-value"></span></td><td><button id="customerSearch" class="search-button" title="搜索 ePortal 客户">⌕</button></td><td colspan="4">End User E-Mail (To receive the item):</td><td colspan="3"><span data-field="user_mail" class="field-value"></span></td><td colspan="2" class="cen">特别条款</td><td colspan="4"><span data-field="term" class="field-value"></span></td><td colspan="5"></td></tr>
+<tr><td colspan="3"><b class="red">*</b>Customer ID:</td><td colspan="2"><span data-field="customer_id" class="field-value"></span></td><td><button id="customerIdSearch" class="search-button" title="搜索 ePortal 客户">⌕</button></td><td colspan="4"><b class="red">*</b>Estimated Delivery Date To Customer:</td><td colspan="3"><span data-field="delivery_date" class="field-value"></span></td><td></td><td colspan="10"></td></tr>
+<tr><td colspan="3">SO:</td><td colspan="2"><span data-field="so" class="field-value"></span></td><td></td><td colspan="4"><b class="red">*</b>Tax Structure:</td><td colspan="3"><span data-field="tax_structure" class="field-value"></span></td><td></td><td colspan="10"></td></tr>
+<tr><td colspan="3"><b class="red">*</b>Date:</td><td colspan="2"><span data-field="date" class="field-value"></span></td><td></td><td colspan="4"><b class="red">*</b>Customer Payment Term:</td><td colspan="3"><span data-field="customer_payment_term" class="field-value"></span></td><td></td><td colspan="10"></td></tr>
+<tr><td colspan="3"><b class="red">*</b>Exchange Rate (for foreign currency):</td><td colspan="2"><span data-field="exchange_rate" class="field-value"></span></td><td></td><td colspan="4">Sales Bundling (Product &amp; Services):</td><td colspan="2"><span data-field="sales_bundling" class="field-value"></span></td><td colspan="2"><label style="white-space:nowrap"><input type="checkbox" id="productWithService"> Product with Service</label></td><td colspan="10"></td></tr>
+<tr><td colspan="3"><b class="red">*</b>签约公司:</td><td colspan="2"><span data-field="location" class="field-value"></span></td><td></td><td colspan="4">JOS/ES Salesman Code:</td><td colspan="3"><span data-field="es_salesman_code" class="field-value"></span></td><td></td><td colspan="3">ePortal 表单：<span id="formId"></span></td><td colspan="4">T 系统订单：<span id="orderIdText"></span></td><td colspan="3"></td></tr>
+</tbody></table>
+<table class="product-table">
+<thead>
+<tr>
+<th>No.</th>
+<th>Node ID</th>
+<th>BiZ Category</th>
+<th>
+<b class="red">*</b>Product Part No</th>
+<th>Vendor Part No</th>
+<th>
+<b class="red">*</b>Description</th>
+<th>
+<b class="red">*</b>Qty</th>
+<th>Cost<br>(Currency)</th>
+<th>Unit Cost<br>(base on cost currency)</th>
+<th>Price<br>(Currency)</th>
+<th>Unit Price<br>(base on price currency)</th>
+<th>Total Cost<br>(base on cost currency)</th>
+<th>Total Price<br>(base on price currency)</th>
+<th>Tax Payable<br>(RM)</th>
+<th>GP<br>(base on price currency)</th>
+<th>GP%</th>
+<th>Supplier</th>
+<th>Inventory Type</th>
+<th>Warehouse</th>
+<th>Dropship<br>(Y/N)</th>
+<th>Comments</th>
+<th>Notes</th>
+<th>OTP</th>
+</tr>
+</thead>
+<tbody id="productRows">
+</tbody>
+</table>
+<input id="productImportFile" type="file" accept=".xlsx,.xls" hidden>
+<div class="product-tools muted">点击产品行可修改该行内容</div>
+<table class="summary-table" aria-label="金额汇总">
+<tbody>
+<tr>
+<td class="summary-label">产品含税总金额：</td>
+<td>
+<span id="productAmount" class="amount" aria-label="Product Amount">
+</span>
+</td>
+<td class="summary-label">服务含税总金额：</td>
+<td>
+<span id="serviceAmount" class="amount">
+</span>
+</td>
+<td class="summary-label">合同含税总金额：</td>
+<td>
+<span id="totalAmount" class="amount">
+</span>
+</td>
+</tr>
+<tr>
+<td class="summary-label">产品不含税总金额：</td>
+<td>
+<span id="productRevenue" class="amount">
+</span>
+</td>
+<td class="summary-label">服务不含税金额：</td>
+<td>
+<span id="serviceRevenue" class="amount">
+</span>
+</td>
+<td class="summary-label">合同不含税总金额：</td>
+<td>
+<span id="totalRevenue" class="amount">
+</span>
+</td>
+</tr>
+<tr>
+<td class="summary-label">产品GP%：</td>
+<td>
+<span id="productGp" class="amount">
+</span>
+</td>
+<td class="summary-label">服务GP%：</td>
+<td>
+<span id="serviceGp" class="amount">
+</span>
+</td>
+<td class="summary-label">合同总GP%：</td>
+<td>
+<span id="totalGp" class="amount">
+</span>
+</td>
+</tr>
+</tbody>
+</table>
+<div class="fixed-note">合同原件：<span class="yes-no">
+<label>
+<input type="radio" name="original" value="否" checked> 否</label>
+<label>
+<input type="radio" name="original" value="是"> 是</label>
+</span>
+<br>当前附件总大小：<span id="attachmentTotal">0 B</span>
+</div>
+<table class="attachment-table" width="900">
+<tbody id="attachmentRows">
+</tbody>
+</table>
+<div class="bottom-bar">
+<button id="btnSubmit" class="sync-button">同步并提交</button>
+</div>
+</main>
+</div>
+</div>
+<div id="editor" class="dialog hidden" role="dialog" aria-modal="true">
+<div class="dialog-box">
+<div class="box-head">
+<b id="editorTitle">编辑字段</b>
+<button id="closeEditor" aria-label="关闭">×</button>
+</div>
+<div id="editorBody" class="box-body">
+</div>
+<div class="box-foot">
+<button id="cancelEditor">取消</button>
+<button id="confirmEditor">确定</button>
+</div>
+</div>
+</div>
+<div id="submitResult" class="dialog hidden" role="dialog" aria-modal="true" aria-labelledby="submitResultTitle">
+<div class="dialog-box">
+<div class="box-head"><b id="submitResultTitle">提交结果</b></div>
+<div class="box-body"><p id="submitResultMessage"></p></div>
+<div class="box-foot">
+<button id="closeSubmitResult">关闭</button>
+<button id="returnToEportal">返回 ePortal 原订单</button>
+</div>
+</div>
+</div>
+<script src="/static/common.js">
 
-    function escText(value) { return esc(value == null ? "" : String(value)); }
-    function isRequired(field) { return field.required || /Sales Person|Customer Delivery Address|Quotation Ref|Customer Name|Customer ID|Estimated Delivery|Tax Structure/.test(field.label || field.field_name); }
-    function valueFor(field) { return Object.prototype.hasOwnProperty.call(changes, field.field_name) ? changes[field.field_name] : field.value; }
-    function showEditor(title, body) { $("editorTitle").textContent = title; $("editorBody").innerHTML = body; $("editor").classList.remove("hidden"); }
-    function closeEditor() { $("editor").classList.add("hidden"); editing = null; }
-    function selectControl(field, value, attribute) {
-      const choices = field.options || [];
-      return `<select ${attribute}>${choices.map(option => `<option value="${escText(option.value)}" ${String(option.value) === String(value == null ? "" : value) ? "selected" : ""}>${escText(option.label)}</option>`).join("")}</select>`;
-    }
-    function fieldControl(field, value) {
-      if (field.type==="select") return selectControl(field, value, 'id="editValue"');
-      if (field.type === "date") return `<input id="editValue" type="date" value="${escText(value)}">`;
-      return `<textarea id="editValue">${escText(value)}</textarea>`;
-    }
-    function productControl(column, row) {
-      const productColumn = (order.item_schema || {})[column] || { type: "text", options: [] };
-      const options = productColumn.options_by_biz_category
-        ? (productColumn.options_by_biz_category[row.biz_category] || []).map(value => ({ value, label: value }))
-        : (productColumn.options || []);
-      if (productColumn.type === "select") return selectControl({ options }, row[column], `data-product-field="${column}"`);
-      return `<input data-product-field="${column}" value="${escText(row[column])}">`;
-    }
-    function renderFields() {
-      const fields = order.fields.filter(field => field.visible !== false);
-      let html = "";
-      for (let index = 0; index < fields.length; index += 2) {
-        html += "<tr>";
-        for (let column = 0; column < 2; column += 1) {
-          const field = fields[index + column];
-          if (!field) { html += "<td></td><td></td>"; continue; }
-          const value = valueFor(field);
-          const empty = value == null || String(value) === "";
-          const readonly = field.editable === false;
-          html += `<td class="label ${isRequired(field) ? "required" : ""}">${escText(field.label)}</td><td><span class="field-value ${empty ? "empty" : ""} ${readonly ? "readonly" : ""}">${escText(value)}</span>${readonly ? "" : `<button class="cell-edit" data-field="${escText(field.field_name)}" title="编辑">✎</button>`}</td>`;
-        }
-        html += "</tr>";
-      }
-      $("fieldRows").innerHTML = html;
-      document.querySelectorAll(".cell-edit").forEach(button => button.addEventListener("click", () => openField(button.dataset.field)));
-    }
-    function openField(name) {
-      const field = order.fields.find(candidate => candidate.field_name === name);
-      if (!field) return;
-      editing = { type: "field", field };
-      showEditor("编辑字段", `<label>${escText(field.label)}</label>${fieldControl(field, valueFor(field))}`);
-    }
-    function renderProducts() {
-      $("productHead").innerHTML = productColumns.map(column => `<th>${escText(productLabels[column])}</th>`).join("");
-      $("productRows").innerHTML = items.length ? items.map((row, index) => `<tr data-product="${index}">${productColumns.map(column => `<td>${escText(row[column])}</td>`).join("")}</tr>`).join("") : `<tr><td colspan="${productColumns.length}" class="muted">暂无产品明细</td></tr>`;
-      document.querySelectorAll("tr[data-product]").forEach(row => row.addEventListener("click", () => openProduct(Number(row.dataset.product))));
-    }
-    function openProduct(index) {
-      const row = items[index] || {};
-      editing = { type: "product", index };
-      showEditor("编辑产品行", `<div class="product-form">${productColumns.map(column => `<div><label>${escText(productLabels[column])}</label>${productControl(column, row)}</div>`).join("")}</div>`);
-    }
-    function renderAttachments() {
-      const attachments = order.attachments || [];
-      const names = ["合同/报价单/ePO", "J-FORM", "J-FORM (Approval)", "GCF"];
-      $("attachmentRows").innerHTML = names.map(name => {
-        const attachment = attachments.find(candidate => (candidate.slot_name || candidate.name || candidate.field_name) === name);
-        return `<tr><td>${name}</td><td class="attachment-name">${attachment ? escText(attachment.filename || attachment.name || "已上传") : ""}</td></tr>`;
-      }).join("");
-    }
-    function render() {
-      $("formId").textContent = order.form_id || order.id || "";
-      $("orderIdText").textContent = order.id || order.order_id || "";
-      $("remoteNotice").classList.toggle("hidden", !remoteOrder);
-      $("who").textContent = API.user ? `操作人：${API.user.display_name || API.user.username}` : "";
-      items = Array.isArray(order.items) ? order.items.map(item => ({ ...item })) : [];
-      renderFields(); renderProducts(); renderAttachments();
-    }
-    async function load() {
-      try {
-        if (eportalId) {
-          order = await API.fetch(`/api/eportal/ticket-orders/${eportalId}`);
-          remoteOrder = true;
-        } else {
-          order = await API.fetch(`/api/orders/${orderId}`);
-          await API.fetch(`/api/orders/${orderId}/lock`, { method: "POST", body: "{}" });
-          remoteOrder = false;
-        }
-        render();
-      } catch (error) {
-        document.body.innerHTML = `<p style="padding:20px;color:#c00">${escText(error.message)}</p>`;
-      }
-    }
-    async function resolveOrderId() {
-      if (orderId) return true;
-      if (!intellisightId) return false;
-      const found = await API.fetch(`/api/orders/lookup?intellisight_id=${encodeURIComponent(intellisightId)}`);
-      orderId = String(found.order_id);
-      return true;
-    }
-
-    $("closeEditor").addEventListener("click", closeEditor);
-    $("confirmEditor").addEventListener("click", () => {
-      if (!editing) return;
-      if (editing.type === "field") {
-        changes[editing.field.field_name] = $("editValue").value;
-        renderFields();
-      } else {
-        const row = items[editing.index];
-        document.querySelectorAll("[data-product-field]").forEach(input => { row[input.dataset.productField] = input.value; });
-        renderProducts();
-      }
-      closeEditor();
-    });
-    $("btnSubmit").addEventListener("click", async () => {
-      if (remoteOrder) { alert("ePortal 已加载，但尚未配置远端保存接口，修改未提交。"); return; }
-      const memoryChoices = {};
-      Object.keys(changes).forEach(field => { memoryChoices[field] = "none"; });
-      try {
-        const result = await API.fetch(`/api/orders/${orderId}/save`, { method: "POST", body: JSON.stringify({ changes, items, memory_choices: memoryChoices, feedback_choices: {} }) });
-        alert(result.status === "synced" ? "提交成功" : "提交失败");
-        changes = {};
-        await load();
-      } catch (_) { alert("提交失败"); }
-    });
-    if (eportalId) load();
-    else if (!orderId && !intellisightId) document.body.innerHTML = '<p style="padding:20px;color:#c00">缺少有效订单参数</p>';
-    else resolveOrderId().then(found => { if (found) load(); }).catch(() => { document.body.innerHTML = '<p style="padding:20px;color:#c00">缺少有效订单参数</p>'; });
-  </script>
+</script>
+<script>const EPORTAL_BASE_URL=__EPORTAL_BASE_URL__;</script>
+<script>
+const $=id=>document.getElementById(id),params=new URLSearchParams(location.search);let eportalId=params.get("id"),orderId=params.get("order_id"),intellisightId=params.get("intellisight_id"),order,changes={},items=[],editing,conversionRules={},selectOptions={},customerResults=[],remoteOrder=false;const productColumns=["node_id","biz_category","product_id","PN","description","qty","currency","unit_cost","price","unit_price","total_cost","total_price","tax_pyable","GP","GP_percent","supplier","inventory_type","warehouse","dropship","remarks"];const fieldAliases={sales_person:"Sales Person",customer_address:"Customer Delivery Address",sf_no:"SF No.",presales:"Presales",user_name:"End User Name",buyer_1:"Requester",quotation_ref:"Quotation Ref / PO No",customer_name:"Customer Name",customer_id:"Customer ID",user_contact:"End User Contact",delivery_date:"Estimated Delivery Date To Customer",date:"Date",user_mail:"End User E-Mail",customer_payment_term:"Customer Payment Term",location:"签约公司",exchange_rate:"Exchange Rate (for foreign currency)",tax_structure:"Tax Structure",original:"签约公司",sales_bundling:"Sales Bundling (Product with Service)",so:"SO",term:"特别条款",es_salesman_code:"JOS/ES Salesman Code",product_amount:"产品含税总金额",service_amount:"服务含税总金额",total_amount:"合同含税总金额",product_revenue:"产品不含税总金额",service_revenue:"服务不含税总金额",total_revenue:"合同不含税总金额",product_gp:"产品GP%",service_gp:"服务GP%",total_gp:"合同总GP%"};const dropdownCatalog={currency:["CNY","USD","MYR","SGD"],cost_currency:["CNY","USD","MYR","SGD"],location:["beijing","shanghai","guangzhou"],buyer_1:["anniean.chen","di.wu","hzeng","jasmine.wu","jfeng","lisa.li","suki.li","yuanfeng.li","zhang.jing","fern.wang"],tax_structure:["3.00","6.00","9.00","13.00","16.00","0"],customer_payment_term:["0D","0D_ForCall","10_DEP_15D","10_DEP_30D","10_DEP_40_7D_50_UAT","10D","14D","14D_PDC","15D","15D_PDC","1D","120D","135D","20_DEP_30D","20_DEP_70_0D_10_UAT","20_DEP_80_30D","20_DEP_80_7D","20D","20D_PDC","21D","21D_PDC","23D","25D","26D","30_DEP_30D","30_DEP_50_7D_20_UAT","30_DEP_60_7D_10_UAT","30_DEP_COD","30D","30D_PDC","3D","40D","42D","45D","45D_PDC","4D","50_DEP_0D","50_DEP_15D","50_DEP_30D","50_DEP_7D","50D","55D","5D","5D_10DEP_30DRECEIVED","5D_30DEP_15D","60D","60D_PDC","65D","65D_PDC","70_DEP_15D","70D","75D","7D","7D_35RECEIVED_30DUAT","7D_PDC","90D","90D_PDC","B2B","CBD","COD"]};const dropdownLabels={buyer_1:{"anniean.chen":"Anniean Chen","di.wu":"Candice Wu","hzeng":"Helena Zeng","jasmine.wu":"Wu Si Min Jasmine","jfeng":"Feng Jun Cici","lisa.li":"Lisa Li","suki.li":"Suki Li","yuanfeng.li":"Sophia Li","zhang.jing":"Zhang Jing","fern.wang":"Fern Wang"},tax_structure:{"3.00":"CN_VAT3","6.00":"CN_VAT6","9.00":"CN_VAT9","13.00":"CN_VAT13","16.00":"CN_VAT16","0":"CN_VAT0"},location:{"beijing":"北京","shanghai":"上海","guangzhou":"广州"}};const dateFields=new Set(["date","delivery_date"]);const computedFieldKeys=new Set(["sales_bundling"]);const productSelectCatalog={node_id:{byBizCategory:{"BAU_BIZ":["DPG-JCSH","DPG-JCBJ","DPG-JCGZ","ESG-JCSH","ESG-JCBJ","ESG-JCGZ"],"NEW_BIZ":["BDS-JCSH","BDS-JCBJ","BDS-JCGZ"]}},biz_category:["BAU_BIZ","NEW_BIZ","Services"],currency:["CNY","USD","MYR","SGD"],price:["CNY","USD","MYR","SGD"],tax_pyable:["13.00","9.00","6.00","3.00","0"],dropship:["Y","N"]};
+function escText(v){return esc(v==null?"":String(v))}function findField(key){return order.fields.find(f=>f.field_name===key)||order.fields.find(f=>f.label===fieldAliases[key])||(key==="original"?order.fields.find(f=>f.field_name==="location"):null)||(key==="user_contact"?order.fields.find(f=>f.field_name==="Customer Contact"||f.label==="Customer Contact"):null)}function value(key){const f=findField(key);return Object.hasOwn(changes,key)?changes[key]:(f?f.value:"")}function required(key){return ["sales_person","customer_address","quotation_ref","customer_name","customer_id","delivery_date","tax_structure"].includes(key)}function openDialog(title,html){$("editorTitle").textContent=title;$("editorBody").innerHTML=html;$("confirmEditor").style.display="";$("editor").classList.remove("hidden")}function closeDialog(){$("editor").classList.add("hidden");editing=null}
+function dropdownValues(key,options=[]){const history=selectOptions[key]||selectOptions[fieldAliases[key]]||[];return [...new Set([...options.map(option=>option.value),...(dropdownCatalog[key]||[]),...history,value(key)].filter(v=>v!==""&&v!=null).map(String))]}function selectLabel(key,val){const labels=dropdownLabels[key];return labels&&labels[val]!=null&&labels[val]!==""?labels[val]:val}function editorControl(field,key){const options=dropdownValues(key,field.options||[]);if(field.type==="select"||dropdownCatalog[key])return `<select id="editValue">${options.map(option=>`<option value="${escText(option)}" ${String(option)===String(value(key))?"selected":""}>${escText(selectLabel(key,option))}</option>`).join("")}</select>`;if(field.type==="date"||dateFields.has(key))return `<input id="editValue" type="date" value="${escText(value(key))}">`;return `<textarea id="editValue">${escText(value(key))}</textarea>`}function lastConversionRule(key){return conversionRules[key]||conversionRules[fieldAliases[key]]||""}function editorOptions(key){return `<label>转换规则（可选）</label>
+<textarea id="editReason" placeholder="例如：英文姓名统一使用全名">${escText(lastConversionRule(key))}</textarea>
+<div class="save-mode"><span>保存方式</span><label><input type="radio" name="saveMode" value="once" checked>单次</label><label><input type="radio" name="saveMode" value="permanent">长期</label></div>`}function salesBundlingValue(){const pw=$("productWithService");if(pw&&pw.checked)return "Product with Service";if(parseFloat(summaryValue("service_amount","服务含税总金额")||"0"))return "Product with Service for RPA";return "Product only"}const productDisplayColumns=["row_no","node_id","biz_category","product_id","PN","description","qty","currency","unit_cost","price_currency","unit_price","total_cost","total_price","tax_pyable","GP","GP_percent","supplier","inventory_type","warehouse","dropship","remarks","notes","otp"];
+function productSelectOptions(key,row){const catalog=productSelectCatalog[key];if(!catalog)return [];if(catalog.byBizCategory)return catalog.byBizCategory[row.biz_category]||[];return catalog}function productEditorControl(key,row,singleField=false){const spec=(order.item_schema||{})[key]||{},options=spec.options_by_biz_category?(spec.options_by_biz_category[row.biz_category]||[]).map(value=>({value,label:value})):(spec.options||[]),values=dropdownValues(key,options),local=productSelectOptions(key,row),itemHistory=(order.item_select_options||{})[key]||[];if(local.length||itemHistory.length)values=[...new Set([...values,...local,...itemHistory])];if(row[key]!=null&&String(row[key])!==""&&!values.some(v=>String(v)===String(row[key])))values=values.concat([String(row[key])]);const controlAttr=singleField?'id="editValue"':`data-product-field="${key}"`;return spec.type==="select"||local.length?`<select ${controlAttr}>${values.map(option=>`<option value="${escText(option)}" ${String(option)===String(row[key]||"")?"selected":""}>${escText(option)}</option>`).join("")}</select>`:(key==="currency"||key==="cost_currency"?`<input ${controlAttr} list="productCurrencyOptions" value="${escText(row[key])}"><datalist id="productCurrencyOptions">${values.map(option=>`<option value="${escText(option)}">`).join("")}</datalist>`:`<input ${controlAttr} value="${escText(row[key])}">`)}function openProductField(index,key){const row=items[index],spec=(order.item_schema||{})[key]||{};editing={type:"product_field",index,key};openDialog("编辑字段",`<label>${escText(spec.label||key)}</label>${productEditorControl(key,row,true)}${editorOptions("items."+index+"."+key)}`)}const summaryFields=[["productAmount","product_amount","产品含税总金额"],["serviceAmount","service_amount","服务含税总金额"],["totalAmount","total_amount","合同含税总金额"],["productRevenue","product_revenue","产品不含税总金额"],["serviceRevenue","service_revenue","服务不含税总金额"],["totalRevenue","total_revenue","合同不含税总金额"],["productGp","product_gp","产品GP%"],["serviceGp","service_gp","服务GP%"],["totalGp","total_gp","合同总GP%"]];function summaryValue(en,zh){if(Object.hasOwn(changes,zh))return changes[zh];if(Object.hasOwn(changes,en))return changes[en];const f=findField(zh)||findField(en);return f?f.value:""}function renderTotals(){const pa=parseFloat(summaryValue("product_amount","产品含税总金额")||"0")||0,sa=parseFloat(summaryValue("service_amount","服务含税总金额")||"0")||0,pr=parseFloat(summaryValue("product_revenue","产品不含税总金额")||"0")||0,sr=parseFloat(summaryValue("service_revenue","服务不含税总金额")||"0")||0,computedTotals={total_amount:pa+sa,total_revenue:pr+sr};for(const [id,en,zh] of summaryFields){const node=$(id);if(!node)continue;const isComputed=zh==="合同含税总金额"||zh==="合同不含税总金额";if(isComputed){node.textContent=computedTotals[en];node.classList.add("readonly");node.style.cursor="";node.onclick=null;continue}node.textContent=summaryValue(en,zh)||"";const f=findField(zh)||findField(en),readonly=remoteOrder||!f||f.editable===false;node.classList.toggle("readonly",readonly);node.style.cursor=readonly?"":"pointer";node.onclick=()=>{if(readonly)return;editing={type:"field",key:zh};const field=f||{type:"text",label:zh};openDialog("编辑字段",`<label>${escText(field.label||zh)}</label>${editorControl(field,zh)}${editorOptions(zh)}`)}}}
+function formatBytes(n){return !n?"0 B":n>1048576?(n/1048576).toFixed(2)+" MB":n>1024?(n/1024).toFixed(1)+" KB":n+" B"}async function replaceAttachment(slotKey,file){if(!file)return;const data=new FormData();data.append("file",file);const headers=API.token?{Authorization:"Bearer "+API.token}:{};try{const response=await fetch(`/api/orders/${orderId}/attachments/${slotKey}`,{method:"POST",headers,body:data}),result=await response.json();if(!response.ok)throw new Error(result.detail||result.message||`HTTP ${response.status}`);order.attachments=result.attachments||[];renderAttachments()}catch(error){alert(error.message||"附件替换失败")}}function renderAttachments(){const slots=[["att1","合同/报价单/ePO"],["att2","J-FORM"],["att4","J-FORM (Approval)"],["att3","GCF"],["other","其他附件"]],atts=order.attachments||[];$("attachmentRows").innerHTML=slots.map(([slotKey,name])=>{const a=atts.find(x=>(x.slot_name||x.field_name||x.name)===name);return `<tr>
+<td width="150">${name}</td>
+<td class="attachment-name">${a?escText(a.filename||a.name||"已上传"):""}</td>
+<td class="attachment-action" data-attachment-action><label>替换<input type="file" data-attachment-file="${slotKey}"></label>　选择后立即同步至 ePortal（不提交表单）</td>
+</tr>`}).join("");$("attachmentRows").querySelectorAll("[data-attachment-file]").forEach(input=>input.onchange=()=>replaceAttachment(input.dataset.attachmentFile,input.files[0]));$("attachmentTotal").textContent=formatBytes(atts.reduce((s,a)=>Number(s)+Number(a.size||0),0))}function render(){$("who").textContent=API.user?`${API.user.display_name||API.user.username}　Logout`:"";conversionRules=order.conversion_rules||{};selectOptions=order.select_options||{};items=Array.isArray(order.items)?order.items.map(item=>({...item})):[];const pw=$("productWithService");if(pw)pw.checked=String(value("sales_bundling"))==="Product with Service";renderFields();renderProducts();renderTotals();renderAttachments()}
+function isEportalUrl(raw){try{return new URL(raw,location.href).origin===new URL(EPORTAL_BASE_URL).origin}catch(_){return false}}function returnToEportal(){const target=params.get("return_url");if(target&&isEportalUrl(target)){location.assign(new URL(target,location.href).href);return true}if(window.opener&&!window.opener.closed){window.opener.focus();window.close();return true}if(document.referrer&&isEportalUrl(document.referrer)){history.back();return true}location.assign(EPORTAL_BASE_URL);return true}function showSubmitResult(title,message){$("submitResultTitle").textContent=title;$("submitResultMessage").textContent=message||title;$("submitResult").classList.remove("hidden")}async function load(){if(eportalId){order=await API.fetch(`/api/eportal/ticket-orders/${eportalId}`);remoteOrder=true}else{order=await API.fetch(`/api/orders/${orderId}`);remoteOrder=false}render()}async function resolveOrder(){if(orderId)return true;if(!intellisightId)return false;orderId=String((await API.fetch(`/api/orders/lookup?intellisight_id=${encodeURIComponent(intellisightId)}`)).order_id);return true}const changeReasons={},memoryChoices={};$("closeEditor").onclick=closeDialog;$("cancelEditor").onclick=closeDialog;$("closeSubmitResult").onclick=()=>$("submitResult").classList.add("hidden");$("returnToEportal").onclick=returnToEportal;$("confirmEditor").onclick=()=>{const reason=$("editReason").value,mode=document.querySelector('input[name="saveMode"]:checked').value;if(editing.type==="field"){changes[editing.key]=$("editValue").value;changeReasons[editing.key]=reason;memoryChoices[editing.key]=mode;if(editing.key==="tax_structure")syncTaxToItems();renderFields();renderTotals()}else if(editing.type==="product_field"){const itemKey=`items.${editing.index}.${editing.key}`;items[editing.index][editing.key]=$("editValue").value;changeReasons[itemKey]=reason;memoryChoices[itemKey]=mode;renderProducts()}closeDialog()};$("btnSubmit").onclick=async()=>{if(remoteOrder){showSubmitResult("提交失败","ePortal 完整订单已加载；远端订单暂不支持保存。");return}try{const result=await API.fetch(`/api/orders/${orderId}/save`,{method:"POST",body:JSON.stringify({changes,items,memory_choices:memoryChoices,change_reasons:changeReasons,feedback_choices:{}})});if(result.status === "synced"){changes={};await load();showSubmitResult("提交成功",result.message||"修改已同步并提交。") }else{showSubmitResult("提交失败",result.message||"提交失败")}}catch(error){showSubmitResult("提交失败",error.message||"提交失败")}};if(!eportalId&&!orderId&&!intellisightId){document.body.innerHTML='<p style="padding:20px;color:#c00">缺少有效订单参数</p>'}else if(eportalId){load().catch(error=>document.body.innerHTML=`<p style="padding:20px;color:#c00">${escText(error.message)}</p>`)}else{resolveOrder().then(found=>found&&load()).catch(error=>document.body.innerHTML=`<p style="padding:20px;color:#c00">${escText(error.message)}</p>`)}
+</script>
+<script>
+function syncHorizontalScroll(){const bar=$("topHorizontalScroll"),content=$("topHorizontalScrollContent");if(!bar||!content)return;content.style.width=$("portalCanvas").scrollWidth+"px";if(bar.scrollLeft!==window.scrollX)bar.scrollLeft=window.scrollX}function fitPortal(){syncHorizontalScroll()}function applyCustomer(index){const selected=customerResults[index];if(!selected)return;for(const key of ["customer_name","customer_id","customer_address","customer_payment_term","user_name","user_contact"]){if(selected[key]!=null){changes[key]=selected[key];memoryChoices[key]="once";changeReasons[key]=""}}closeDialog();renderFields();renderProducts()}async function runCustomerSearch(){const output=$("customerResults"),query=$("customerQuery").value.trim();output.textContent="搜索中…";try{const found=await API.fetch(`/api/orders/customers/search?q=${encodeURIComponent(query)}`);customerResults=found.items||[];output.innerHTML=customerResults.length?customerResults.map((item,index)=>`<button class="customer-result" data-customer-index="${index}">${index+1}. ${escText(item.customer_id)} / ${escText(item.customer_name)} / ${escText(item.customer_address)}</button>`).join(""):"未找到客户";output.querySelectorAll("[data-customer-index]").forEach(button=>button.onclick=()=>applyCustomer(Number(button.dataset.customerIndex)))}catch(error){output.textContent=`搜索失败：${error.message||"无法连接 ePortal 客户库"}`}}function openCustomerSearch(preferredField){const seed=value(preferredField)||value("customer_name")||value("customer_id")||"";openDialog("客户搜索",`<div class="customer-query"><label>客户名称或 Customer ID：<input id="customerQuery" value="${escText(seed)}"></label><button id="runCustomerSearch">搜索</button></div><div id="customerResults" class="customer-results">输入关键词后搜索 ePortal 客户库</div>`);$("confirmEditor").style.display="none";$("runCustomerSearch").onclick=runCustomerSearch;$("customerQuery").onkeydown=event=>{if(event.key==="Enter")runCustomerSearch()};runCustomerSearch()}
+function syncTaxToItems(){const tax=value("tax_structure");if(!tax)return;items.forEach(row=>{row.tax_pyable=tax})}$("customerSearch")?.addEventListener("click",()=>openCustomerSearch("customer_name"));$("customerIdSearch")?.addEventListener("click",()=>openCustomerSearch("customer_id"));document.querySelectorAll('input[name="prior"],input[name="original"]').forEach(input=>input.addEventListener("change",()=>{changes[input.name]=input.value;memoryChoices[input.name]="once";changeReasons[input.name]=""}));$("productWithService")?.addEventListener("change",()=>{changes["sales_bundling"]=salesBundlingValue();changeReasons["sales_bundling"]="";memoryChoices["sales_bundling"]="none";renderFields();renderTotals()});$("topHorizontalScroll")?.addEventListener("scroll",()=>window.scrollTo({left:$("topHorizontalScroll").scrollLeft,top:window.scrollY}));window.addEventListener("scroll",syncHorizontalScroll);window.addEventListener("resize",fitPortal);setTimeout(fitPortal,300);
+const editableProductFields=new Set(["node_id","biz_category","product_id","PN","description","qty","currency","unit_cost","price","unit_price","tax_pyable","supplier","inventory_type","warehouse","dropship","remarks","notes"]);function productFieldKey(key){return key==="price_currency"?"price":key}function productFieldEditable(key){return editableProductFields.has(productFieldKey(key))}function syncWarehouseFromSourceRules(){const hasGcf=(order.attachments||[]).some(a=>(a.slot_name||a.field_name||a.name)==="GCF"),location=value("location"),node=(hasGcf?{beijing:"ESG-JCBJ",shanghai:"ESG-JCSH",guangzhou:"ESG-JCGZ"}:{beijing:"DPG-JCBJ",shanghai:"DPG-JCSH",guangzhou:"DPG-JCGZ"})[location]||"",customer=String(value("customer_id")||"").trim().toUpperCase().slice(0,1),warehouses={B:{JCSH:"FG-JCSH-BJ",JCBJ:"FG-JCBJ"},G:{JCSH:"FG-JCSH-GZ",JCGZ:"FG-JCGZ"},S:{JCSH:"FG-JCSH"}};items.forEach(row=>{if(!row.node_id)row.node_id=node;const suffix=String(row.node_id||"").slice(4);if(!row.warehouse)row.warehouse=(warehouses[customer]||{})[suffix]||""})}function productDisplayValue(row,key,index){if(key==="row_no")return index+1;if(key==="price_currency")return row.price_currency||row.price||row.currency||"";if(key==="otp")return row.otp??row.pass??"";return row[key]||""}function displayFieldValue(key,val){return dropdownLabels[key]?.[val]??val}function renderFields(){document.querySelectorAll("[data-field]").forEach(node=>{const key=node.dataset.field,f=findField(key),readonly=!f||f.editable===false||computedFieldKeys.has(key),val=computedFieldKeys.has(key)?salesBundlingValue():value(key);node.textContent=displayFieldValue(key,val==null?"":val);node.classList.toggle("alt",required(key)&&!val);node.classList.toggle("readonly",readonly);node.onclick=()=>{if(readonly)return;if(key==="customer_name"||key==="customer_id"){openCustomerSearch(key);return}editing={type:"field",key};openDialog("编辑字段",`<label>${escText(f.label)}</label>${editorControl(f,key)}${editorOptions(key)}`)}});const formIdNode=$("formId");if(formIdNode)formIdNode.textContent=order.form_id||"";const orderIdNode=$("orderIdText");if(orderIdNode)orderIdNode.textContent=order.order_id||order.id||""}
+function productRowTemplate(){return {node_id:"",biz_category:"BAU_BIZ",product_id:"",PN:"",description:"",qty:"",currency:"CNY",unit_cost:"",price:"CNY",unit_price:"",tax_pyable:value("tax_structure")||"",supplier:"",inventory_type:"",warehouse:"",dropship:"",remarks:"",notes:"",pass:0}}function addProductRow(index){items.splice(index+1,0,productRowTemplate());renderProducts()}function deleteProductRow(index){if(items.length<2){alert("最少保留一行.");return}items.splice(index,1);renderProducts()}async function importProductRows(file){if(!file)return;const data=new FormData();data.append("file",file);try{const response=await fetch("/api/orders/products/import",{method:"POST",headers:API.token?{Authorization:"Bearer "+API.token}:{},body:data}),result=await response.json();if(!response.ok)throw new Error(result.detail||`HTTP ${response.status}`);items.push(...(result.items||[]).map(row=>({...productRowTemplate(),...row})));renderProducts()}catch(error){alert(error.message||"产品导入失败")}finally{$("productImportFile").value=""}}function renderProducts(){syncWarehouseFromSourceRules();const body=$("productRows");body.innerHTML=items.length?items.map((row,index)=>`<tr data-product="${index}">${productDisplayColumns.map(column=>{if(column==="row_no")return `<td><div class="product-row-menu"><button type="button" data-product-action="menu">${index+1}</button><div class="product-action-menu" hidden><button type="button" data-product-action="add">添加行</button><button type="button" data-product-action="delete">删除行</button><button type="button" data-product-action="import">导入产品</button></div></div></td>`;const key=productFieldKey(column),editable=productFieldEditable(key),cellValue=escText(productDisplayValue(row,column,index));return `<td data-product-field="${key}" class="${editable?"editable-product-cell":"readonly"}">${cellValue}</td>`}).join("")}</tr>`).join(""):`<tr><td colspan="23" class="cen muted">暂无产品明细</td></tr>`}const productRowsBody=$("productRows");productRowsBody.onclick=event=>{const action=event.target.closest("[data-product-action]");if(action){const row=action.closest("[data-product]"),index=Number(row.dataset.product);if(action.dataset.productAction==="menu"){const menu=action.nextElementSibling;document.querySelectorAll(".product-action-menu").forEach(item=>{if(item!==menu)item.hidden=true});menu.hidden=!menu.hidden}else if(action.dataset.productAction==="add")addProductRow(index);else if(action.dataset.productAction==="delete")deleteProductRow(index);else if(action.dataset.productAction==="import")$("productImportFile").click();return}const cell=event.target.closest("[data-product-field]");if(!cell||!productFieldEditable(cell.dataset.productField))return;openProductField(Number(cell.closest("[data-product]").dataset.product),cell.dataset.productField)};document.addEventListener("click",event=>{if(!event.target.closest(".product-row-menu"))document.querySelectorAll(".product-action-menu").forEach(menu=>menu.hidden=true)});$("productImportFile").onchange=()=>importProductRows($("productImportFile").files[0]);
+const renderTotalsEditable=renderTotals;renderTotals=()=>{renderTotalsEditable();document.querySelectorAll(".summary-table .amount").forEach(node=>{const meta=summaryFields.find(field=>field[0]===node.id),key=meta?.[2],field=key&&(findField(key)||findField(meta?.[1])),readonly=node.id==="totalAmount"||node.id==="totalRevenue"||!field||field.editable===false;node.classList.toggle("readonly",readonly);node.classList.toggle("editable-amount",!readonly);node.style.cursor=readonly?"":"pointer";node.title=readonly?"自动计算，不能修改":"点击修改";node.onclick=()=>{if(readonly)return;editing={type:"field",key};openDialog("编辑字段",`<label>${escText(field.label||key)}</label>${editorControl(field,key)}${editorOptions(key)}`)}})}
+</script>
 </body>
 </html>

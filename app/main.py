@@ -1,15 +1,17 @@
 """T 系统应用装配。"""
 from contextlib import asynccontextmanager
+import json
 from pathlib import Path
 from time import perf_counter
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from .db import Base, engine
+from .config import settings
 from .services.order import BizError
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -83,7 +85,10 @@ def create_app() -> FastAPI:
 
     @app.get("/t2")
     def page_t2():
-        return FileResponse(STATIC_DIR / "t2.html")
+        # The allowed ePortal origin is supplied by server configuration, never by
+        # an untrusted return_url query parameter.
+        page = (STATIC_DIR / "t2.html").read_text(encoding="utf-8")
+        return HTMLResponse(page.replace("__EPORTAL_BASE_URL__", json.dumps(settings.eportal_base_url.rstrip("/"))))
 
     @app.get("/eportal")
     def page_eportal():

@@ -41,8 +41,29 @@ def test_merge_order_fields_preserves_canonical_metadata():
     assert fields["Tax Structure"]["value"] == "13%"
     assert fields["Sales Person"]["value"] == "" and fields["Sales Person"]["required"] is True
     assert fields["SO"]["editable"] is False
-    assert fields["产品含税总金额"]["editable"] is False
+    assert fields["产品含税总金额"]["editable"] is True
+    assert fields["合同总GP%"]["editable"] is True
     assert fields["自定义字段"]["editable"] is True and fields["自定义字段"]["group"] == "其他"
+
+
+def test_amount_and_gp_summary_fields_are_editable_and_saveable(client):
+    order = create_mock_eportal_order(
+        client, customer="Acme",
+        fields={"产品含税总金额": "7390.2", "合同总GP%": "8.66%"},
+    )
+    start_edit_session(client, order)
+    resp = client.post("/api/eportal/orders/current/save", json={
+        "expected_version": 1,
+        "changes": {"产品含税总金额": "8000", "合同总GP%": "9.00%"},
+        "items": None, "attachments": None, "error_descriptions": {},
+    })
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["order"]["fields"]["产品含税总金额"]["value"] == "8000"
+    assert body["order"]["fields"]["合同总GP%"]["value"] == "9.00%"
+    form = eportal_form(client, order["order_id"])
+    assert form["fields"]["产品含税总金额"] == "8000"
+    assert form["fields"]["合同总GP%"] == "9.00%"
 
 
 def test_intake_order_carries_full_costing_sheet(client):

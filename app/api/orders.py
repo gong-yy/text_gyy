@@ -1,13 +1,16 @@
-"""T2 人工修改界面相关接口：订单列表/详情、编辑锁、保存回写、失败重发。"""
-from fastapi import APIRouter, Depends, HTTPException, Query
+"""T2 人工修改界面相关接口：订单列表/详情、保存回写、失败重发。"""
+from io import BytesIO
+
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from openpyxl import load_workbook
 from sqlalchemy.orm import Session
 
 from ..db import get_db
+from ..adapters.eportal import EPortalError, search_customers
 from ..logging_config import audit
-from ..lock import acquire, release
 from ..models import Order, User
 from ..schemas import SaveChangesRequest
-from ..services.order import BizError, order_detail, resend, save_changes
+from ..services.order import BizError, order_detail, replace_t2_attachment, resend, save_changes, sync_t2_attachment
 from ..services.zhimou_callback import resend_final_result
 from .deps import get_t2_operator
 
@@ -19,6 +22,42 @@ def _get_order(db: Session, order_id: int) -> Order:
     if not order:
         raise HTTPException(status_code=404, detail=f"订单不存在：{order_id}")
     return order
+
+
+@router.get("/customers/search")
+def customer_search(
+    q: str = Query("", max_length=100), user: User = Depends(get_t2_operator), db: Session = Depends(get_db)
+):
+    try:
+        return {"items": search_customers(db, q)}
+    except EPortalError as exc:
+        raise HTTPException(status_code=502, detail=exc.args[0]) from exc
+
+
+@router.post("/products/import")
+async def import_products(file: UploadFile = File(...), user: User = Depends(get_t2_operator)):
+    """按 ePortal 源码导入首个 Excel 工作表的 A/B/C 产品列（跳过标题行）。"""
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=422, detail="请选择包含产品数据的 Excel 文件")
+    try:
+        workbook = load_workbook(BytesIO(content), read_only=True, data_only=True)
+        try:
+            sheet = workbook.active
+            items = []
+            for product_id, description, vendor_part_no, *_ in sheet.iter_rows(min_row=2, values_only=True):
+                row = {
+                    "product_id": "" if product_id is None else str(product_id).strip(),
+                    "description": "" if description is None else str(description).strip(),
+                    "PN": "" if vendor_part_no is None else str(vendor_part_no).strip(),
+                }
+                if any(row.values()):
+                    items.append(row)
+        finally:
+            workbook.close()
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail="产品导入文件不是有效的 Excel 文件") from exc
+    return {"items": items}
 
 
 @router.get("/lookup")
@@ -58,7 +97,7 @@ def list_orders(
             "customer_name": o.customer_name,
             "status": o.status,
             "version": o.version,
-            "holder": o.locked_by_name if o.locked_by else None,
+            "holder": None,
             "updated_at": o.updated_at.isoformat(sep=" ") if o.updated_at else None,
         }
         for o in rows
@@ -70,22 +109,36 @@ def get_order(order_id: int, user: User = Depends(get_t2_operator), db: Session 
     return order_detail(db, _get_order(db, order_id))
 
 
+@router.post("/{order_id}/attachments/{slot_key}")
+async def replace_attachment(order_id: int, slot_key: str, file: UploadFile = File(...),
+                             user: User = Depends(get_t2_operator), db: Session = Depends(get_db)):
+    """T2 附件替换：立即同步附件，但不传 stage=3、也不提交 ePortal 表单。"""
+    try:
+        attachment = replace_t2_attachment(db, _get_order(db, order_id), slot_key, {
+            "filename": file.filename,
+            "content_type": file.content_type,
+            "content": await file.read(),
+        })
+        sync_t2_attachment(db, _get_order(db, order_id))
+        audit("t2_attachment_replaced", order_id=order_id, operator=user.username,
+              slot=slot_key, filename=attachment["filename"])
+        return {"attachment": attachment, "attachments": _get_order(db, order_id).payload.get("attachments", [])}
+    except BizError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+
 @router.post("/{order_id}/lock")
 def lock_order(order_id: int, user: User = Depends(get_t2_operator), db: Session = Depends(get_db)):
-    """进入 T2 时加锁/续期；并发冲突返回 423 + 「当前正被 XXX 编辑」。"""
-    ok, holder = acquire(db, _get_order(db, order_id), user)
-    if not ok:
-        audit("t2_lock_rejected", order_id=order_id, operator=user.username, holder=holder)
-        raise HTTPException(status_code=423, detail=f"当前正被 {holder} 编辑")
-    audit("t2_lock", order_id=order_id, operator=user.username)
-    return {"ok": True, "holder": user.display_name or user.username}
+    """兼容旧客户端的入口通知；T2 不再占用或拒绝订单编辑。"""
+    _get_order(db, order_id)
+    audit("t2_edit_opened", order_id=order_id, operator=user.username)
+    return {"ok": True, "holder": None, "locking": False}
 
 
 @router.post("/{order_id}/unlock")
 def unlock_order(order_id: int, user: User = Depends(get_t2_operator), db: Session = Depends(get_db)):
-    release(db, _get_order(db, order_id), user)
-    audit("t2_unlock", order_id=order_id, operator=user.username)
-    return {"ok": True}
+    _get_order(db, order_id)
+    return {"ok": True, "locking": False}
 
 
 @router.post("/{order_id}/save")
@@ -102,6 +155,7 @@ def save_order(order_id: int, body: SaveChangesRequest, user: User = Depends(get
             changes=dict(body.changes),
             items=body.items,
             memory_choices=dict(body.memory_choices),
+            change_reasons=dict(body.change_reasons),
             feedback_choices=dict(body.feedback_choices),
         )
         audit("t2_save_completed", order_id=order_id, operator=user.username,

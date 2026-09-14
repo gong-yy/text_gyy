@@ -64,3 +64,31 @@ input:focus, select:focus, textarea:focus { outline: 2px solid #bfdbfe; border-c
 .tabs { display: flex; gap: 6px; margin-bottom: 10px; }
 .tabs .tab { padding: 4px 14px; border-radius: 6px 6px 0 0; border: 1px solid var(--line); cursor: pointer; background: #f1f5f9; font-size: 13px; }
 .tabs .tab.active { background: var(--blue); color: #fff; border-color: var(--blue); }
+
+/* T2 复用 ePortal COSTING SHEET 的原始排版；以 #body 提高优先级覆盖旧页面的简化规则。 */
+#body .sheet { padding: 0 5px 20px; overflow-x: auto; }
+#body .form-table { min-width: 0; width: auto; table-layout: auto; border-spacing: 0; }
+#body .form-table col { width: auto !important; }
+#body .form-table td { height: 28px; padding: 1px 3px; vertical-align: middle; }
+#body .form-table .field-value { min-width: 0; width: 100%; line-height: 20px; }
+#body .product-table { width: auto; min-width: 0; table-layout: auto; font-size: 11px; }
+#body .product-table th { height: 39px; padding: 2px 3px; vertical-align: middle; white-space: normal; }
+#body .product-table th:nth-child(1) { min-width: 48px; }
+#body .product-table th:nth-child(2) { min-width: 78px; }
+#body .product-table th:nth-child(3) { min-width: 110px; }
+#body .product-table th:nth-child(4) { min-width: 105px; }
+#body .product-table th:nth-child(5) { min-width: 300px; }
+#body .product-table th:nth-child(6) { min-width: 52px; }
+#body .product-table th:nth-child(7) { min-width: 62px; }
+#body .product-table th:nth-child(n+8):nth-child(-n+14) { min-width: 82px; }
+#body .product-table th:nth-child(n+15):nth-child(-n+18) { min-width: 90px; }
+#body .product-table th:nth-child(19) { min-width: 200px; }
+#body .product-table td { height: 25px; padding: 1px 3px; vertical-align: middle; }
+#body .summary-table { margin: 5px 0 0; min-width: 0; width: auto; }
+#body .summary-table td { min-width: 0; padding: 3px 5px; }
+#body .attachment-table { margin-top: 2px; min-width: 900px; }
+#body .attachment-table td { height: 38px; padding: 5px; vertical-align: middle; }
+#body .dialog-box { width: 500px; border-radius: 3px; }
+#body .box-body { padding: 8px; }
+#body .box-body > label:has(input[name="saveMode"]) { display: inline-flex; width: auto; align-items: center; gap: 4px; margin: 4px 20px 0 0; font-weight: normal; }
+#body .box-body > label:has(input[name="saveMode"]) input { width: auto; padding: 0; }

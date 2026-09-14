@@ -44,6 +44,8 @@ def test_3_t2_save_syncs_back_to_eportal(client):
     form = eportal_form(client, r["form_id"])
     assert form["fields"]["Sales Person"] == "Louis Lu"  # 返回 ePortal 即见最新数据
     assert form["fields"]["Customer Payment Term"] == "30D"  # 未修改字段保持现值
+    assert form["fields"]["stage"] == "3"  # stage=3 由 ePortal 自动点击提交
+    assert form["status"] == "submitted"
 
 
 # 验收 4：同一「客户名+字段+原值」第二次出现时自动应用上次人工修改值（长期规则）
@@ -207,16 +209,14 @@ def test_10_format_differences_still_hit(client):
     assert r["applied_memory"], "客户名大小写/空格差异不应漏命中"
 
 
-# 验收 11：同一订单并发编辑，后进入者收到占用提示
-def test_11_concurrent_edit_lock(client):
+# 验收 11：T2 不使用编辑锁，任何业务员均可直接进入和保存。
+def test_11_concurrent_edit_has_no_lock(client):
     r = intake(client, CUSTOMER, {"Sales Person": ""})
     resp1 = lock(client, r["order_id"], "sales1")
     assert resp1.status_code == 200
     resp2 = lock(client, r["order_id"], "sales2")
-    assert resp2.status_code == 423
-    assert "当前正被" in resp2.json()["detail"]
-    assert "张销售" in resp2.json()["detail"]
-    # 持有者本人可继续保存
+    assert resp2.status_code == 200
+    # 两人均可继续保存；后保存者按正常版本覆盖业务字段。
     res = save(client, r["order_id"], {"Sales Person": "Louis Lu"},
                memory_choices={"Sales Person": "none"}).json()
     assert res["status"] == "synced"

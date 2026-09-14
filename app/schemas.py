@@ -35,6 +35,8 @@ class SaveChangesRequest(BaseModel):
     items: list[dict] | None = None                                   # 产品行；None 表示不修改
     # 记忆确认（默认长期规则）：permanent 长期 / once 仅本次单次 / none 不记忆
     memory_choices: dict[str, str] = Field(default_factory=dict)
+    # 人工修改说明：{字段或 items.<行号>.<列名>: 可选原因}，供审计与后续 Agent 分析。
+    change_reasons: dict[str, str] = Field(default_factory=dict)
     # 负反馈（长期记忆命中字段被人工改写时必选）：override 覆盖原规则 / once 仅本次单次
     feedback_choices: dict[str, str] = Field(default_factory=dict)
 

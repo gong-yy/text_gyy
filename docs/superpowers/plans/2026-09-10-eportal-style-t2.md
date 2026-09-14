@@ -8,7 +8,7 @@
 
 **Tech Stack:** FastAPI, SQLAlchemy, vanilla HTML/CSS/JavaScript, pytest.
 
-**Spec:** Conversation-approved design, based on `新建 文本文档 (2).txt`.
+**Spec:** Conversation-approved design, based on `D:/GK/T/data/text/t-system-non-runtime/新建 文本文档 (2).txt`.
 
 ## Global Constraints
 

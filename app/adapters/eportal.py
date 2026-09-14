@@ -6,6 +6,7 @@
 - 入口：ePortal 订单页【修改】按钮 → T2（携带表单ID/订单ID + 身份令牌），在 mock 演示页实现。
 """
 import json
+import re
 import secrets
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -75,6 +76,23 @@ _LEGACY_PRODUCT_FIELDS = (
 )
 
 _TICKET_FIELD_SPECS = {
+    "sales_person": {"label": "Sales Person", "required": True},
+    "presales": {"label": "Presales"},
+    "quotation_ref": {"label": "Quotation Ref / PO No", "required": True},
+    "customer_name": {"label": "Customer Name", "required": True},
+    "customer_id": {"label": "Customer ID", "required": True},
+    "so": {"label": "SO"},
+    "exchange_rate": {"label": "Exchange Rate (for foreign currency)"},
+    "customer_address": {"label": "Customer Delivery Address", "required": True},
+    "user_name": {"label": "End User Name (To receive the item)"},
+    "user_contact": {"label": "End User Contact (To receive the item)"},
+    "user_mail": {"label": "End User E-Mail (To receive the item)"},
+    "sales_bundling": {"label": "Sales Bundling (Product & Services)", "type": "select", "options": [
+        ("Product only", "Product only"), ("Product with Service", "Product with Service"),
+    ]},
+    "es_salesman_code": {"label": "JOS/ES Salesman Code"},
+    "sf_no": {"label": "SF No."},
+    "term": {"label": "特别条款"},
     "buyer_1": {"label": "Requester", "type": "select", "options": [
         ("", ""), ("anniean.chen", "Anniean Chen"), ("di.wu", "Candice Wu"),
         ("hzeng", "Helena Zeng"), ("jasmine.wu", "Wu Si Min Jasmine"),
@@ -83,7 +101,7 @@ _TICKET_FIELD_SPECS = {
     ]},
     "tax_structure": {"label": "Tax Structure", "type": "select", "required": True, "options": [
         ("3.00", "CN_VAT3"), ("6.00", "CN_VAT6"), ("9.00", "CN_VAT9"),
-        ("10", "CN_VAT10"), ("13.00", "CN_VAT13"), ("16.00", "CN_VAT16"), ("0", "CN_VAT0"),
+        ("13.00", "CN_VAT13"), ("16.00", "CN_VAT16"), ("0", "CN_VAT0"),
     ]},
     "customer_payment_term": {"label": "Customer Payment Term", "type": "select", "required": True, "options": [
         (value, value) for value in (
@@ -159,9 +177,18 @@ def normalize_ticket_order(payload: dict) -> dict:
     attachments = []
     for key, slot_name in _TICKET_ATTACHMENT_SLOTS.items():
         attachment = payload.get(key)
+        # 真实 ePortal 的 att1~att4 是文件名文本（旧报文为 {id,name} 对象）；att_1~att_4 是文件 ID。
+        attachment_id = payload.get("att_" + key[3:]) or (
+            attachment.get("id") if isinstance(attachment, dict) else None
+        )
         if isinstance(attachment, dict) and attachment:
             name = str(attachment.get("name") or attachment.get("filename") or "")
-            attachments.append({"id": attachment.get("id") or key, "slot_name": slot_name,
+        elif isinstance(attachment, str):
+            name = attachment.strip()
+        else:
+            name = ""
+        if name:
+            attachments.append({"id": attachment_id or key, "slot_name": slot_name,
                                 "filename": name, "name": name})
     return {
         "id": int(payload["id"]), "form_id": str(payload["id"]), "version": int(payload.get("last_mod") or 0),
@@ -348,7 +375,8 @@ class EPortalAdapter(ABC):
 
     @abstractmethod
     def update_form(self, db: Session, form_id: str, changed_fields: dict, version: int,
-                    items: list | None = None, intellisight_id: str | None = None) -> dict:
+                    items: list | None = None, attachments: list[dict] | None = None,
+                    intellisight_id: str | None = None) -> dict:
         """回写：携带智眸订单号同步修改后字段；失败抛 EPortalError。"""
 
     @abstractmethod
@@ -487,7 +515,8 @@ class MockEPortalAdapter(EPortalAdapter):
         return CreateResult(form_id=form_id, version=1)
 
     def update_form(self, db: Session, form_id: str, changed_fields: dict, version: int,
-                    items: list | None = None, intellisight_id: str | None = None) -> dict:
+                    items: list | None = None, attachments: list[dict] | None = None,
+                    intellisight_id: str | None = None) -> dict:
         replay = (
             db.query(EportalWriteLog)
             .filter(EportalWriteLog.form_id == form_id, EportalWriteLog.version == version)
@@ -506,6 +535,10 @@ class MockEPortalAdapter(EPortalAdapter):
         row.fields = fields
         if items is not None:
             row.items = items
+        if attachments is not None:
+            row.attachments = _ensure_ids(attachments, "id", "A")
+        if str(fields.get("stage") or "") == "3":
+            row.status = "submitted"
         row.version = max(row.version or 1, version)
         db.add(EportalWriteLog(form_id=form_id, version=version, payload=dict(changed_fields)))
         db.flush()
@@ -528,6 +561,8 @@ class MockEPortalAdapter(EPortalAdapter):
 class HttpEPortalAdapter(EPortalAdapter):
     """真实 ePortal REST 对接（契约细节落地后按实际报文调整）。"""
 
+    _auth_cache: str | None = None
+
     def _headers(self, *, json_content: bool = True) -> dict:
         h = {"Content-Type": "application/json"} if json_content else {}
         if settings.eportal_service_token:
@@ -544,6 +579,128 @@ class HttpEPortalAdapter(EPortalAdapter):
         if resp.status_code >= 400:
             raise EPortalError(f"ePortal 拒绝请求 HTTP {resp.status_code}: {resp.text[:200]}")
         return resp.json()
+
+    def _user_token(self) -> str:
+        if self._auth_cache:
+            return self._auth_cache
+        if not settings.eportal_service_username.strip():
+            return ""
+        try:
+            response = httpx.post(
+                settings.eportal_base_url + "/api/login",
+                json={"username": settings.eportal_service_username, "password": settings.eportal_service_password},
+                headers={"Content-Type": "application/json"}, timeout=15,
+            )
+            data = self._check(response)
+        except (httpx.RequestError, ValueError) as exc:
+            raise EPortalError("ePortal 服务身份认证失败") from exc
+        token = str(data.get("token") or "")
+        if not token:
+            raise EPortalError("ePortal 服务身份认证未返回 token")
+        self._auth_cache = token
+        return token
+
+    @staticmethod
+    def _needs_authentication(response: httpx.Response) -> bool:
+        if response.status_code in {401, 403}:
+            return True
+        try:
+            data = response.json()
+        except ValueError:
+            return False
+        message = str(data.get("msg") or "").lower()
+        return any(marker in message for marker in ("需要身份验证", "身份验证", "身份认证", "未登录", "登录", "token", "unauthorized", "authentication", "not login"))
+
+    def _request(self, method: str, url: str, *, authenticated: bool = True,
+                 json_content: bool = True, headers: dict | None = None, **kwargs) -> httpx.Response:
+        request = getattr(httpx, method)
+        for attempt in range(2):
+            merged_headers = {**self._headers(json_content=json_content), **(headers or {})}
+            if authenticated:
+                token = self._user_token()
+                if token:
+                    merged_headers["user_token"] = token
+            response = request(url, headers=merged_headers, **kwargs)
+            if not authenticated or not self._needs_authentication(response) or attempt:
+                return response
+            self._auth_cache = None
+        return response
+
+    @staticmethod
+    def _session_cookie(response: httpx.Response) -> str:
+        """从 Set-Cookie 头提取 PHPSESSID（不依赖 response.request 关联）。"""
+        for value in response.headers.get_list("set-cookie"):
+            for part in value.split(";"):
+                part = part.strip()
+                if part.lower().startswith("phpsessid="):
+                    return part.split("=", 1)[1]
+        return ""
+
+    def _web_login(self) -> str:
+        """用服务账号登录 ePortal web（wtms），返回 PHPSESSID 会话标识。"""
+        if not settings.eportal_service_username.strip() or not settings.eportal_service_password.strip():
+            raise EPortalError("未配置 ePortal 服务账号（service_username/service_password），无法进行客户搜索")
+        try:
+            response = httpx.post(
+                settings.eportal_base_url + settings.eportal_login_path,
+                json={"name": settings.eportal_service_username, "password": settings.eportal_service_password},
+                headers={"Content-Type": "application/json"}, timeout=15,
+            )
+            data = self._check(response)
+        except httpx.RequestError as exc:
+            raise EPortalError("无法连接 ePortal 登录接口") from exc
+        except ValueError as exc:
+            raise EPortalError("ePortal 登录接口返回内容不是有效 JSON") from exc
+        # 实测失败（name 为空 / 密码错误）返回 code=1；成功返回 code=0。
+        if str(data.get("code")) == "1":
+            raise EPortalError(f"ePortal 服务账号登录失败：{data.get('msg') or '请检查 service_username/service_password'}")
+        session_id = self._session_cookie(response)
+        if not session_id:
+            raise EPortalError("ePortal 登录未返回会话，无法进行客户搜索")
+        return session_id
+
+    def search_customers(self, query: str) -> list[dict]:
+        """搜索 ePortal 客户资料；searchCustomer 可在无服务账号时直接访问。"""
+        session_id = ""
+        if settings.eportal_service_username.strip() and settings.eportal_service_password.strip():
+            session_id = self._web_login()
+        url = settings.eportal_base_url + settings.eportal_search_customer_path
+        try:
+            response = httpx.get(url, params={"w": query},
+                                 headers={"Cookie": f"PHPSESSID={session_id}"} if session_id else {}, timeout=15)
+            if response.status_code >= 400:
+                self._check(response)
+            try:
+                data = response.json()
+            except ValueError:
+                data = self._php_customer_rows(response.text)
+        except httpx.RequestError as exc:
+            raise EPortalError("无法连接 ePortal 客户查询") from exc
+        except ValueError as exc:
+            raise EPortalError("ePortal 客户查询返回格式无法识别") from exc
+        rows = data if isinstance(data, list) else (data or {}).get("items") or []
+        return [{
+            "customer_name": row.get("descr") or row.get("customer_name") or "",
+            "customer_id": row.get("company_id") or row.get("customer_id") or "",
+            "customer_address": row.get("address_1") or row.get("customer_address") or "",
+            "customer_payment_term": row.get("pterm_id") or row.get("customer_payment_term") or "",
+            "user_name": row.get("attention") or row.get("user_name") or "",
+            "user_contact": row.get("phone_id") or row.get("user_contact") or "",
+        } for row in rows]
+
+    @staticmethod
+    def _php_customer_rows(text: str) -> list[dict]:
+        """兼容 ePortal searchCustomer 直接输出的 PHP var_dump array。"""
+        rows = []
+        for block in re.findall(r"\[\d+\]\s*=>\s*array\(\d+\)\s*\{(.*?)\n\s*\}", text, re.S):
+            row = {}
+            for key, value in re.findall(r'\["([^"]+)"\]\s*=>\s*(?:string\(\d+\)\s*)?"([^"]*)"', block):
+                row[key] = value
+            if row:
+                rows.append(row)
+        if not rows:
+            raise ValueError("not a PHP customer array")
+        return rows
 
     def exchange_ticket(self, ticket: str) -> EditContext:
         resp = httpx.post(
@@ -635,16 +792,31 @@ class HttpEPortalAdapter(EPortalAdapter):
         )
 
     def update_form(self, db: Session, form_id: str, changed_fields: dict, version: int,
-                    items: list | None = None, intellisight_id: str | None = None) -> dict:
+                    items: list | None = None, attachments: list[dict] | None = None,
+                    intellisight_id: str | None = None) -> dict:
         """复用 entry 接口回写完整订单，并携带智眸订单号供 ePortal 定位。"""
         payload = legacy_create_payload("", changed_fields, items, intellisight_id=intellisight_id)
         payload["id"] = form_id
+        multipart_files = {"data": (None, json.dumps(payload, ensure_ascii=False), "application/json")}
+        if attachments:
+            multipart_files = list(multipart_files.items()) + [
+                (
+                    str(attachment["field_name"]),
+                    (
+                        str(attachment["filename"]),
+                        Path(str(attachment["path"])).read_bytes(),
+                        str(attachment.get("content_type") or "application/octet-stream"),
+                    ),
+                )
+                for attachment in attachments
+                if attachment.get("field_name") and attachment.get("filename") and attachment.get("path")
+            ]
         try:
             audit("eportal_writeback_requested", intellisight_id=intellisight_id or "", form_id=form_id,
                   version=version, item_count=len(items or []))
             resp = httpx.post(
                 settings.eportal_base_url + settings.eportal_create_path,
-                files={"data": (None, json.dumps(payload, ensure_ascii=False), "application/json")},
+                files=multipart_files,
                 headers=self._headers(json_content=False),
                 timeout=15,
             )
@@ -681,3 +853,26 @@ def get_adapter() -> EPortalAdapter:
     if _adapter is None:
         _adapter = HttpEPortalAdapter() if settings.eportal_mode == "http" else MockEPortalAdapter()
     return _adapter
+
+
+def search_customers(db: Session | None, query: str) -> list[dict]:
+    """复用 ePortal 客户资料；HTTP 模式用服务账号建立 web 会话后查询。"""
+    if settings.eportal_mode == "http":
+        return HttpEPortalAdapter().search_customers(query)
+    if db is None:
+        return []
+    matches = []
+    needle = (query or "").lower()
+    for row in db.query(EportalOrder).all():
+        fields = row.fields or {}
+        value = lambda name: (fields.get(name) or {}).get("value", "") if isinstance(fields.get(name), dict) else fields.get(name, "")
+        candidate = {
+            "customer_name": row.customer_name or "",
+            "customer_id": value("customer_id") or "",
+            "customer_address": value("customer_address") or "",
+            "customer_payment_term": value("customer_payment_term") or "",
+            "user_name": value("user_name") or "",
+        }
+        if not needle or needle in candidate["customer_name"].lower() or needle in candidate["customer_id"].lower():
+            matches.append(candidate)
+    return matches

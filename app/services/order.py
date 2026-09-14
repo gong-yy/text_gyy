@@ -1,6 +1,7 @@
 """订单服务：智眸接入 → T1 匹配 → 建单 → T2 保存（记忆确认/负反馈）→ 回写重试；
 以及 ePortal 编辑会话驱动的版本化保存（Task 3+）。
 """
+import json
 import re
 import time
 from dataclasses import dataclass
@@ -12,8 +13,7 @@ from ..adapters.eportal import EPortalConflictError, EPortalError, get_adapter
 from ..config import settings
 from ..logging_config import audit
 from ..history import log
-from ..lock import is_locked_by_other, lock_holder, release
-from ..models import CorrectionCase, HitLog, MemoryRule, Order, User
+from ..models import CorrectionCase, History, HitLog, MemoryRule, Order, User
 from ..util import utcnow
 from .memory import apply_memory
 
@@ -31,6 +31,132 @@ class IntakeOutcome:
     eportal_response: dict | None = None
 
 
+_SOURCE_ATTACHMENT_SLOTS = {
+    "att1": "合同/报价单/ePO", "att_1": "合同/报价单/ePO",
+    "att2": "J-FORM", "att_2": "J-FORM",
+    # The ePortal source binds att4 to Approval and att3 to GCF.
+    "att3": "GCF", "att_3": "GCF",
+    "att4": "J-FORM (Approval)", "att_4": "J-FORM (Approval)",
+}
+
+_T2_ATTACHMENT_SLOT_KEYS = {
+    "att1": "合同/报价单/ePO",
+    "att2": "J-FORM",
+    "att3": "GCF",
+    "att4": "J-FORM (Approval)",
+    "other": "其他附件",
+}
+
+
+def _source_attachment_metadata(fields: dict) -> list[dict]:
+    """把 ePortal 源码的 att1~att4 / attachments 元数据放进 T2 固定附件槽。"""
+    def decode(raw):
+        """ePortal 有时把对象/数组 JSON 化后放入 callback 字段。"""
+        if not isinstance(raw, str):
+            return raw
+        try:
+            return json.loads(raw)
+        except (TypeError, ValueError):
+            return None
+
+    result: list[dict] = []
+    for source_key, slot_name in _SOURCE_ATTACHMENT_SLOTS.items():
+        raw = decode(fields.get(source_key))
+        if not isinstance(raw, dict) or not (raw.get("name") or raw.get("filename")):
+            continue
+        result.append({
+            "field_name": slot_name, "slot_name": slot_name,
+            "filename": str(raw.get("filename") or raw["name"]),
+            "size": raw.get("size") or 0, "path": raw.get("path") or "",
+            "content_type": raw.get("content_type") or raw.get("type") or "",
+        })
+    attached = decode(fields.get("attachments")) or []
+    if isinstance(attached, dict):
+        attached = [attached]
+    for raw in attached:
+        if not isinstance(raw, dict) or not (raw.get("name") or raw.get("filename")):
+            continue
+        slot_name = str(raw.get("field_name") or raw.get("slot_name") or "其他附件")
+        result.append({
+            "field_name": slot_name, "slot_name": slot_name,
+            "filename": str(raw.get("filename") or raw["name"]),
+            "size": raw.get("size") or 0, "path": raw.get("path") or "",
+            "content_type": raw.get("content_type") or raw.get("type") or "",
+        })
+    # ePortal's Vue page exposes its “其他附件” collection as fData.files.
+    other_files = decode(fields.get("files")) or []
+    if isinstance(other_files, dict):
+        other_files = [other_files]
+    for raw in other_files:
+        if not isinstance(raw, dict) or not (raw.get("name") or raw.get("filename")):
+            continue
+        result.append({
+            "field_name": "其他附件", "slot_name": "其他附件",
+            "filename": str(raw.get("filename") or raw["name"]),
+            "size": raw.get("size") or 0, "path": raw.get("path") or "",
+            "content_type": raw.get("content_type") or raw.get("type") or "",
+        })
+    return result
+
+
+def _with_attachment_slots(attachments: list[dict]) -> list[dict]:
+    """上传字段 att1~att4 仍以原字段回写，但展示到源码对应的附件行。"""
+    indexed: dict[str, dict] = {}
+    for attachment in attachments:
+        source_key = str(attachment.get("field_name") or "")
+        slot_name = str(attachment.get("slot_name") or _SOURCE_ATTACHMENT_SLOTS.get(source_key) or source_key or "其他附件")
+        indexed[slot_name] = {**attachment, "slot_name": slot_name}
+    return list(indexed.values())
+
+
+def replace_t2_attachment(db: Session, order: Order, slot_key: str, uploaded: dict) -> dict:
+    """替换 T2 固定附件槽；附件同步与 stage=3 提交严格分离。"""
+    slot_name = _T2_ATTACHMENT_SLOT_KEYS.get(slot_key)
+    if not slot_name:
+        raise BizError(404, f"未知附件槽：{slot_key}")
+    content = uploaded.get("content") or b""
+    if not content:
+        raise BizError(422, "请选择非空附件")
+    from .attachments import store_intake_attachments
+
+    stored = store_intake_attachments([{
+        "field_name": slot_key,
+        "filename": uploaded.get("filename") or "attachment",
+        "content_type": uploaded.get("content_type") or "application/octet-stream",
+        "content": content,
+    }], order.zhimou_task_id, order.id)[0]
+    stored.update({"slot_name": slot_name, "size": len(content)})
+    existing = [item for item in (order.payload.get("attachments") or [])
+                if (item.get("slot_name") or item.get("field_name")) != slot_name]
+    order.payload["attachments"] = _with_attachment_slots(existing + [stored])
+    flag_modified(order, "payload")
+    db.commit()
+    return stored
+
+
+def sync_t2_attachment(db: Session, order: Order) -> None:
+    """只回写附件：不传 stage=3，ePortal 表单不会因此提交。"""
+    if not order.form_id:
+        raise BizError(409, "订单尚未生成 ePortal 表单，暂不能同步附件")
+    fields = {
+        field: entry.get("value", "")
+        for field, entry in (order.payload.get("fields") or {}).items()
+    }
+    outbound_version = order.version + 1
+    try:
+        get_adapter().update_form(
+            db, order.form_id, fields, outbound_version,
+            attachments=order.payload.get("attachments") or None,
+            intellisight_id=order.zhimou_task_id,
+        )
+    except EPortalError as exc:
+        raise BizError(502, f"附件同步 ePortal 失败：{exc}") from exc
+    order.version = outbound_version
+    order.last_error = None
+    flag_modified(order, "payload")
+    db.commit()
+
+
 def intake(
     db: Session,
     *,
@@ -44,7 +170,12 @@ def intake(
     """② 智眸流转 → T1 匹配 → ③ 建单送 ePortal。"""
     from ..eportal_schema import HEADER_FIELDS, split_zhimou_items
 
-    scalar_fields, parsed_items = split_zhimou_items(fields or {})  # 智眸产品行列 → 结构化产品行
+    source_fields = fields or {}
+    source_attachment_metadata = _source_attachment_metadata(source_fields)
+    scalar_fields, parsed_items = split_zhimou_items({
+        key: value for key, value in source_fields.items()
+        if key not in _SOURCE_ATTACHMENT_SLOTS and key not in {"attachments", "files"}
+    })  # 智眸产品行列 → 结构化产品行
     items = items if items is not None else parsed_items
     all_fields = {meta[0]: "" for meta in HEADER_FIELDS}  # canonical 全量表单都过 T1（空值填充依赖此语义）
     all_fields.update(scalar_fields)
@@ -71,9 +202,10 @@ def intake(
         from .attachments import store_intake_attachments
 
         stored_attachments = store_intake_attachments(attachments, task_id, order.id)
-        order.payload["attachments"] = stored_attachments
+        order.payload["attachments"] = _with_attachment_slots(source_attachment_metadata + stored_attachments)
     else:
         stored_attachments = []
+        order.payload["attachments"] = _with_attachment_slots(source_attachment_metadata)
     flag_modified(order, "payload")  # flush 后原地改 JSON，需显式标记变更才能持久化
     auto_modified = {a["field"]: {"rule_id": a["rule_id"]} for a in order.payload["applied_memory"]}
     try:
@@ -151,6 +283,37 @@ def order_detail(db: Session, order: Order) -> dict:
                             "visible": True, "editable": True,
                             "value": obj["value"], "source": obj.get("source", "zhimou"),
                             "rule_id": obj.get("rule_id")})
+    conversion_rules: dict[str, str] = {}
+    history_rows = (
+        db.query(History)
+        .join(Order, History.order_id == Order.id)
+        .filter(History.op_type == "manual_modify", Order.customer_name == order.customer_name)
+        .order_by(History.op_time.desc(), History.id.desc())
+        .all()
+    )
+    for record in history_rows:
+        if not record.field_name or record.field_name in conversion_rules:
+            continue
+        match = re.search(r"转换规则：(.*?)(?:；保存方式：|$)", record.remark or "")
+        if match and match.group(1) and match.group(1) != "未填写":
+            conversion_rules[record.field_name] = match.group(1)
+    select_fields = {"签约公司", "Requester", "Tax Structure", "Customer Payment Term"}
+    select_options: dict[str, list[str]] = {}
+    item_select_options: dict[str, list[str]] = {}
+    item_field_re = re.compile(r"^items\.\d+\.(.+)$")
+    for record in history_rows:
+        if record.field_name in select_fields and record.value_after:
+            values = select_options.setdefault(record.field_name, [])
+            value = str(record.value_after)
+            if value not in values:
+                values.append(value)
+        match = item_field_re.match(record.field_name or "")
+        if match and record.value_after:
+            column = match.group(1)
+            values = item_select_options.setdefault(column, [])
+            value = str(record.value_after)
+            if value not in values:
+                values.append(value)
     return {
         "order_id": order.id,
         "zhimou_task_id": order.zhimou_task_id,
@@ -165,8 +328,11 @@ def order_detail(db: Session, order: Order) -> dict:
         "pending_writeback": order.pending_writeback,
         "items": order.payload.get("items", []),
         "attachments": order.payload.get("attachments", []),
+        "conversion_rules": conversion_rules,
+        "select_options": select_options,
+        "item_select_options": item_select_options,
         "zhimou_callback": (order.payload or {}).get("zhimou_callback"),
-        "lock": {"locked_by": order.locked_by, "holder": lock_holder(order)},
+        "lock": {"locked_by": None, "holder": None},
         "created_at": order.created_at.isoformat(sep=" ") if order.created_at else None,
         "updated_at": order.updated_at.isoformat(sep=" ") if order.updated_at else None,
     }
@@ -179,16 +345,15 @@ def save_changes(
     changes: dict,
     items: list[dict] | None = None,
     memory_choices: dict | None = None,
+    change_reasons: dict | None = None,
     feedback_choices: dict | None = None,
 ) -> dict:
     """⑤ T2 保存：逐字段记忆确认 / 负反馈，然后 ⑥ 同步回写 ePortal。"""
-    if is_locked_by_other(order, operator.username):
-        raise BizError(423, f"当前正被 {lock_holder(order)} 编辑")
-
     fields = order.payload.get("fields", {})
     original = order.payload.get("original", {})
     applied_map = {a["field"]: a for a in order.payload.get("applied_memory", [])}
     memory_choices = memory_choices or {}
+    change_reasons = change_reasons or {}
     feedback_choices = feedback_choices or {}
 
     changed: list[tuple[str, str, str]] = []
@@ -202,15 +367,22 @@ def save_changes(
     if items is not None and any(not isinstance(item, dict) for item in items):
         raise BizError(422, "产品明细须为对象数组")
     items_changed = items is not None and items != order.payload.get("items", [])
-    if not changed and not items_changed:
+    attachments_changed = bool(order.payload.get("attachments_pending"))
+    if not changed and not items_changed and not attachments_changed:
         return {"status": order.status, "changed": [], "form_id": order.form_id, "message": "无修改内容"}
 
     results = []
     for field, old_value, new_value in changed:
+        choice = memory_choices.get(field, "permanent")
+        if choice not in ("permanent", "once", "none"):
+            raise BizError(422, f"字段「{field}」记忆选项无效：{choice}")
+        mode_text = {"permanent": "长期", "once": "单次", "none": "不保存规则"}[choice]
+        reason = str(change_reasons.get(field, "")).strip()
+        remark = f"转换规则：{reason or '未填写'}；保存方式：{mode_text}"
         fields[field]["value"] = new_value
         fields[field]["source"] = "human"
         fields[field].pop("rule_id", None)
-        log(db, "manual_modify", operator, order=order, field=field, before=old_value, after=new_value)
+        log(db, "manual_modify", operator, order=order, field=field, before=old_value, after=new_value, remark=remark)
 
         rule_entry = applied_map.get(field)
         rule = db.get(MemoryRule, rule_entry["rule_id"]) if rule_entry else None
@@ -235,9 +407,6 @@ def save_changes(
             handled = True
 
         if not handled:
-            choice = memory_choices.get(field, "permanent")  # 默认记为长期规则
-            if choice not in ("permanent", "once", "none"):
-                raise BizError(422, f"字段「{field}」记忆选项无效：{choice}")
             anchor_old = original.get(field, old_value)  # 记忆锚定用智眸原值
             if choice == "permanent":
                 r = MemoryRule(
@@ -285,18 +454,32 @@ def save_changes(
         results.append({"field": field, "before": old_value, "after": new_value})
 
     if items_changed:
+        old_items = order.payload.get("items", [])
+        for row_index, item in enumerate(items):
+            previous = old_items[row_index] if row_index < len(old_items) else {}
+            for column, new_value in item.items():
+                old_value = previous.get(column, "")
+                if old_value == new_value:
+                    continue
+                key = f"items.{row_index}.{column}"
+                choice = memory_choices.get(key, "once")
+                mode_text = "长期" if choice == "permanent" else "单次"
+                reason = str(change_reasons.get(key, "")).strip()
+                log(db, "manual_modify", operator, order=order, field=key,
+                    before=old_value, after=new_value,
+                    remark=f"转换规则：{reason or '未填写'}；保存方式：{mode_text}")
         order.payload["items"] = items
+    if attachments_changed:
+        order.payload.pop("attachments_pending", None)
     order.version += 1
     order.pending_writeback = {"fields": {f: n for f, _, n in changed}, "version": order.version}
     flag_modified(order, "payload")
     db.commit()
 
     ok = _writeback(db, order)
-    if ok:
-        release(db, order, operator)  # 保存回写成功即释放锁
     db.commit()
     if ok:
-        message = "修改已同步回写 ePortal，可返回 ePortal 核对并提交订单"
+        message = "修改已同步回写 ePortal（stage: 3），ePortal 将自动提交订单"
     else:
         message = "回写 ePortal 失败（已自动重试），修改已保留在 T 系统，可点击「重新同步」手动重发"
     return {"status": order.status, "changed": results, "form_id": order.form_id, "message": message}
@@ -339,9 +522,12 @@ def _writeback(db: Session, order: Order) -> bool:
                 field: entry.get("value", "")
                 for field, entry in (order.payload.get("fields") or {}).items()
             }
+            # 与 ePortal 约定：stage=3 表示写入完成后由 ePortal 自行触发提交。
+            all_fields["stage"] = "3"
             get_adapter().update_form(
                 db, order.form_id, all_fields, pw["version"],
                 items=order.payload.get("items") or None,
+                attachments=order.payload.get("attachments") or None,
                 intellisight_id=order.zhimou_task_id,
             )
             order.status = "synced"

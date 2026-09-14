@@ -13,9 +13,13 @@ _DEFAULTS = {
         "base_url": "http://127.0.0.1:8400",
         "api_key": "",
         "service_token": "",
+        "service_username": "",
+        "service_password": "",
         "create_path": "/api/orders",
         "update_path": "/api/forms/{form_id}",
         "get_path": "/api/forms/{form_id}",
+        "login_path": "/ae.php/api/login",
+        "search_customer_path": "/ae.php/api/searchCustomer",
         "ticket_exchange_path": "/internal/t-system/tickets/exchange",
         "order_for_edit_path": "/internal/t-system/orders/{order_id}",
         "order_update_for_edit_path": "/internal/t-system/orders/{order_id}",
@@ -61,9 +65,15 @@ class Settings:
         self.eportal_base_url = _get("eportal", "base_url", "T_SYSTEM_EPORTAL_BASE_URL")
         self.eportal_api_key = _get("eportal", "api_key", "T_SYSTEM_EPORTAL_API_KEY")
         self.eportal_service_token = _get("eportal", "service_token", "T_SYSTEM_EPORTAL_SERVICE_TOKEN")
+        self.eportal_service_username = _get("eportal", "service_username", "T_SYSTEM_EPORTAL_SERVICE_USERNAME")
+        self.eportal_service_password = _get("eportal", "service_password", "T_SYSTEM_EPORTAL_SERVICE_PASSWORD")
         self.eportal_create_path = _get("eportal", "create_path", "T_SYSTEM_EPORTAL_CREATE_PATH")
         self.eportal_update_path = _get("eportal", "update_path", "T_SYSTEM_EPORTAL_UPDATE_PATH")
         self.eportal_get_path = _get("eportal", "get_path", "T_SYSTEM_EPORTAL_GET_PATH")
+        self.eportal_login_path = _get("eportal", "login_path", "T_SYSTEM_EPORTAL_LOGIN_PATH")
+        self.eportal_search_customer_path = _get(
+            "eportal", "search_customer_path", "T_SYSTEM_EPORTAL_SEARCH_CUSTOMER_PATH"
+        )
         self.eportal_ticket_exchange_path = _get(
             "eportal", "ticket_exchange_path", "T_SYSTEM_EPORTAL_TICKET_EXCHANGE_PATH"
         )
